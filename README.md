@@ -26,53 +26,53 @@ boot, restart and shutdown splash.
 <tr>
 <td align="center" width="33%">
 <img src="docs/screenshots/accordion.jpg" alt="Accordion theme"><br>
-<b>Accordion</b><br><code>accordion</code>
+<b>Accordion</b>
 </td>
 <td align="center" width="33%">
 <img src="docs/screenshots/cinema.jpg" alt="Cinema theme"><br>
-<b>Cinema</b><br><code>cinema</code>
+<b>Cinema</b>
 </td>
 <td align="center" width="33%">
 <img src="docs/screenshots/hud.jpg" alt="HUD theme"><br>
-<b>HUD</b><br><code>hud</code>
+<b>HUD</b>
 </td>
 </tr>
 <tr>
 <td align="center" width="33%">
 <img src="docs/screenshots/glass-sidebar.jpg" alt="Glass Sidebar theme"><br>
-<b>Glass Sidebar</b><br><code>glass-sidebar</code>
+<b>Glass Sidebar</b>
 </td>
 <td align="center" width="33%">
 <img src="docs/screenshots/editorial-dark.jpg" alt="Editorial Dark theme"><br>
-<b>Editorial Dark</b><br><code>editorial-dark</code>
+<b>Editorial Dark</b>
 </td>
 <td align="center" width="33%">
 <img src="docs/screenshots/editorial.jpg" alt="Editorial theme"><br>
-<b>Editorial</b><br><code>editorial</code>
+<b>Editorial</b>
 </td>
 </tr>
 <tr>
 <td align="center" width="33%">
 <img src="docs/screenshots/honeycomb.jpg" alt="Honeycomb theme"><br>
-<b>Honeycomb</b><br><code>honeycomb</code>
+<b>Honeycomb</b>
 </td>
 <td align="center" width="33%">
 <img src="docs/screenshots/constellation.jpg" alt="Constellation theme"><br>
-<b>Constellation</b><br><code>constellation</code>
+<b>Constellation</b>
 </td>
 <td align="center" width="33%">
 <img src="docs/screenshots/picker-wheel.jpg" alt="Picker Wheel theme"><br>
-<b>Picker Wheel</b><br><code>picker-wheel</code>
+<b>Picker Wheel</b>
 </td>
 </tr>
 <tr>
 <td align="center" width="33%">
 <img src="docs/screenshots/dial.jpg" alt="Dial theme"><br>
-<b>Dial</b><br><code>dial</code>
+<b>Dial</b>
 </td>
 <td align="center" width="33%">
 <img src="docs/screenshots/minimal.jpg" alt="Minimal theme"><br>
-<b>Minimal</b><br><code>minimal</code>
+<b>Minimal</b>
 </td>
 </tr>
 </table>
