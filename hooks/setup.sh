@@ -1,0 +1,187 @@
+#!/bin/bash
+#
+# Connect the running Linux installation to Aarambh.
+#
+# Detects the distribution, boot loader and initramfs generator, installs the
+# kernel-list generator with the matching hooks, adds this OS to the menu,
+# makes GRUB silent and installs the Plymouth theme. Run it once on every
+# Linux installation that shares the EFI partition.
+#
+# Usage: setup.sh [--dry-run] [--no-plymouth] [--loader '\EFI\<dir>\<file>.efi']
+
+set -euo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR=/usr/local/lib/aarambh
+BIN_DIR=/usr/local/sbin
+LIB_FILES="common.sh cmdline.sh direct-boot.sh kernels-bls.sh kernels-scan.sh"
+
+DRY_RUN=0
+SKIP_PLYMOUTH=0
+LOADER_OVERRIDE=""
+
+usage() {
+    sed -n '3,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+
+parse_arguments() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --dry-run) DRY_RUN=1 ;;
+            --no-plymouth) SKIP_PLYMOUTH=1 ;;
+            --loader)
+                shift
+                LOADER_OVERRIDE="${1:-}"
+                ;;
+            -h|--help) usage 0 ;;
+            *) usage 1 ;;
+        esac
+        shift
+    done
+}
+
+parse_arguments "$@"
+
+if [ "$(id -u)" != 0 ] && [ "$DRY_RUN" = 0 ] && [ -z "${AARAMBH_ROOT:-}" ]; then
+    exec sudo bash "${BASH_SOURCE[0]}" "$@"
+fi
+
+for library in common detect manifest triggers grub-config initramfs plymouth menu-entry; do
+    # shellcheck source=/dev/null
+    . "$HOOK_DIR/lib/$library.sh"
+done
+
+locate_esp() {
+    case "$HOOK_DIR" in
+        */EFI/aarambh/hooks)
+            ESP_ROOT="${HOOK_DIR%/EFI/aarambh/hooks}"
+            ;;
+        *)
+            detect_esp || die "no EFI system partition found at /boot/efi, /efi or /boot"
+            ;;
+    esac
+
+    ESP_DIR="$ESP_ROOT/EFI/aarambh"
+
+    if [ ! -d "$ESP_DIR" ]; then
+        if [ "$DRY_RUN" = 1 ]; then
+            warn "$ESP_DIR does not exist yet, it is created by scripts/install.sh"
+        else
+            die "$ESP_DIR not found. Run scripts/install.sh first."
+        fi
+    fi
+}
+
+print_detection() {
+    log "distribution:    $OS_NAME ($OS_ID${OS_ID_LIKE:+, like $OS_ID_LIKE})"
+    log "EFI partition:   $ESP_ROOT"
+    log "boot loader:     $BOOTLOADER${BLS:+ (BLS: $BLS)}"
+    log "initramfs:       $INITRAMFS_TOOL"
+    log "loader path:     $LOADER"
+}
+
+write_environment() {
+    {
+        echo "KEY=$KEY"
+        echo "ESP_ROOT=$ESP_ROOT"
+        echo "ESP_DIR=$ESP_DIR"
+        echo "BOOTLOADER=$BOOTLOADER"
+        echo "BLS=$BLS"
+        echo "GRUB_PROBE=$GRUB_PROBE"
+        echo "GRUB_CFG=$GRUB_CFG"
+    } | write_file "$ENV_FILE"
+
+    manifest_add file "$ENV_FILE"
+}
+
+install_scripts() {
+    local file
+
+    install_file 755 "$HOOK_DIR/bin/aarambh-kernels" "$ROOT$BIN_DIR/aarambh-kernels"
+    install_file 755 "$HOOK_DIR/bin/aarambh-clear" "$ROOT$BIN_DIR/aarambh-clear"
+    install_file 755 "$HOOK_DIR/bin/aarambh" "$ROOT$BIN_DIR/aarambh"
+
+    run rm -f "$ROOT$LIB_DIR/ubuntu.sh" "$ROOT$LIB_DIR/fedora.sh"
+
+    for file in $LIB_FILES; do
+        install_file 644 "$HOOK_DIR/lib/$file" "$ROOT$LIB_DIR/$file"
+    done
+}
+
+reset_oneshot() {
+    if [ "$DRY_RUN" = 0 ]; then
+        : > "$ESP_DIR/next-$KEY.cfg"
+    fi
+}
+
+refresh_kernel_list() {
+    if [ "$DRY_RUN" = 1 ]; then
+        echo "  would run: $BIN_DIR/aarambh-kernels"
+        return 0
+    fi
+
+    AARAMBH_LIB_DIR="$ROOT$LIB_DIR" bash "$ROOT$BIN_DIR/aarambh-kernels"
+}
+
+print_summary() {
+    local list="$ESP_DIR/$KEY.kernels"
+
+    echo
+    log "done: $OS_NAME is connected to Aarambh"
+
+    if [ -f "$list" ]; then
+        grep -v '^@' "$list" | cut -d'|' -f1,3 | sed 's/|\(.\+\)$/   [direct boot]/; s/|$//' \
+            | sed 's/^/    /'
+    fi
+
+    df -h "$ESP_ROOT" 2>/dev/null | tail -n1 | awk '{print "aarambh: EFI partition free: " $4}'
+    log "change theme or default OS with: sudo aarambh --theme <name> --default <os>"
+}
+
+main() {
+    local rebuild=0
+
+    detect_os
+    KEY=$OS_ID
+    locate_esp
+    detect_bootloader
+    detect_initramfs_tool
+
+    LOADER=$(detect_loader || true)
+    if [ -z "$LOADER" ]; then
+        die "could not find the EFI loader of $OS_NAME. Pass it with --loader '\\EFI\\<dir>\\<file>.efi'"
+    fi
+
+    print_detection
+
+    if [ "$DRY_RUN" = 1 ]; then
+        log "dry run: nothing will be changed"
+    fi
+
+    write_environment
+    install_scripts
+    install_triggers
+    install_clear_service
+    reset_oneshot
+    register_menu_entry "$LOADER"
+    configure_grub
+
+    if tune_initramfs; then
+        rebuild=1
+    fi
+
+    if install_plymouth_theme; then
+        rebuild=1
+    fi
+
+    if [ "$rebuild" = 1 ]; then
+        rebuild_initramfs
+    fi
+
+    regenerate_grub
+    refresh_kernel_list
+    print_summary
+}
+
+main

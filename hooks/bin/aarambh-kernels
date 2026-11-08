@@ -1,0 +1,43 @@
+#!/bin/bash
+#
+# Regenerate <key>.kernels on the ESP and keep the direct-boot copy current.
+# Called by the GRUB, kernel-install, initramfs and package manager hooks.
+
+set -uo pipefail
+
+LIB_DIR="${AARAMBH_LIB_DIR:-/usr/local/lib/aarambh}"
+
+# shellcheck source=../lib/common.sh
+. "$LIB_DIR/common.sh"
+# shellcheck source=../lib/cmdline.sh
+. "$LIB_DIR/cmdline.sh"
+# shellcheck source=../lib/direct-boot.sh
+. "$LIB_DIR/direct-boot.sh"
+
+if ! load_environment || [ ! -d "$ESP_DIR" ]; then
+    exit 0
+fi
+
+KERNEL_LIST="$ESP_DIR/$KEY.kernels"
+LINUX_DIR="$ESP_DIR/linux/$KEY"
+EFI_LINUX_DIR="\\EFI\\aarambh\\linux\\$KEY"
+CONFIG_FILE="$ESP_DIR/aarambh.conf"
+
+update_utc_offset() {
+    if [ -f "$CONFIG_FILE" ]; then
+        sed -i '/^utc_offset/d' "$CONFIG_FILE"
+        echo "utc_offset $(date +%z)" >> "$CONFIG_FILE"
+    fi
+}
+
+update_utc_offset
+
+if [ "$BLS" = yes ]; then
+    # shellcheck source=../lib/kernels-bls.sh
+    . "$LIB_DIR/kernels-bls.sh"
+    list_bls_kernels > "$KERNEL_LIST"
+else
+    # shellcheck source=../lib/kernels-scan.sh
+    . "$LIB_DIR/kernels-scan.sh"
+    list_scanned_kernels > "$KERNEL_LIST"
+fi

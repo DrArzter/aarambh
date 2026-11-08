@@ -1,0 +1,4 @@
+entry openSUSE Tumbleweed | \EFI\opensuse\shim.efi | logos/opensuse-tumbleweed.png | backgrounds/opensuse-tumbleweed.jpg | opensuse-tumbleweed | #73ba25
+entry Firmware  | @firmware | logos/settings.png | backgrounds/settings.jpg |  | #8a90a8
+entry Restart   | @reboot   | logos/restart.png  | backgrounds/restart.jpg  |  | #2a9d8f
+entry Power Off | @shutdown | logos/power.png    | backgrounds/power.jpg    |  | #c0392b

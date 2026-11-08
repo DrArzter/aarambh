@@ -1,0 +1,88 @@
+# Shared helpers for every Aarambh shell script. Sourced, not executed.
+#
+# AARAMBH_ROOT prefixes every system path (/etc, /boot, /proc). It is empty on
+# a real system and points at a fake root in tests/hooks.
+
+ROOT="${AARAMBH_ROOT:-}"
+ENV_FILE="$ROOT/etc/aarambh.env"
+DRY_RUN="${DRY_RUN:-0}"
+
+log() {
+    echo "aarambh: $*"
+}
+
+warn() {
+    echo "aarambh: warning: $*" >&2
+}
+
+die() {
+    echo "aarambh: error: $*" >&2
+    exit 1
+}
+
+# Run a command, or only print it with --dry-run.
+run() {
+    if [ "$DRY_RUN" = 1 ]; then
+        echo "  would run: $*"
+        return 0
+    fi
+    "$@"
+}
+
+# Write stdin to a file, or only name the file with --dry-run.
+write_file() {
+    local target=$1
+
+    if [ "$DRY_RUN" = 1 ]; then
+        echo "  would write: $target"
+        cat >/dev/null
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$target")"
+    cat > "$target"
+}
+
+has_command() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+load_environment() {
+    if [ ! -f "$ENV_FILE" ]; then
+        return 1
+    fi
+
+    # shellcheck source=/dev/null
+    . "$ENV_FILE"
+
+    ESP_ROOT="${ESP_ROOT:-${ESP_DIR%/EFI/aarambh}}"
+    BOOTLOADER="${BOOTLOADER:-grub}"
+    BLS="${BLS:-no}"
+    GRUB_PROBE="${GRUB_PROBE:-}"
+    GRUB_CFG="${GRUB_CFG:-/boot/grub/grub.cfg}"
+}
+
+# Print an ESP-relative UEFI path (\vmlinuz-linux) for a file that lives on the
+# ESP, or fail when it lives anywhere else.
+esp_path() {
+    local file
+    local esp
+
+    file=$(realpath -m "$1")
+    esp=$(realpath -m "$ESP_ROOT")
+
+    case "$file" in
+        "$esp"/*) ;;
+        *) return 1 ;;
+    esac
+
+    printf '%s' "${file#"$esp"}" | tr '/' '\\'
+}
+
+file_size() {
+    if [ -f "$1" ]; then
+        stat -c %s "$1"
+    else
+        echo 0
+    fi
+}

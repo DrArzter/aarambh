@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+# Installed into the kernel and initramfs hook directories of the running
+# distribution. Refreshes Aarambh after every kernel or initramfs change and
+# never fails the package operation.
+
+/usr/local/sbin/aarambh-kernels >/dev/null 2>&1 || true
+exit 0

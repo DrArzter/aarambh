@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# GRUB snippet: refresh the kernel list, then apply the kernel picked in Aarambh.
+
+. /etc/aarambh.env
+
+/usr/local/sbin/aarambh-kernels >/dev/null 2>&1 || true
+
+cat <<CFG
+search --no-floppy --file --set=aarambh_esp /EFI/aarambh/next-$KEY.cfg
+if [ -n "\$aarambh_esp" ]; then
+  source (\$aarambh_esp)/EFI/aarambh/next-$KEY.cfg
+fi
+CFG

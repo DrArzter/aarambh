@@ -1,0 +1,289 @@
+#!/bin/bash
+#
+# Change Aarambh settings from the command line. Edits aarambh.conf on the
+# shared EFI partition, so a change made from any connected OS applies to
+# every boot.
+#
+# Usage: aarambh [options]
+#
+#   -t, --theme <name>       Set the theme, e.g. cinema
+#   -d, --default <os>       Set the default entry: OS id (ubuntu, fedora,
+#                            windows), menu title or index
+#   -T, --timeout <seconds>  Set the countdown, 0 disables it
+#       --themes             List the themes
+#   -l, --list               List the menu entries
+#   -s, --status             Show the current theme, default and timeout
+#   -h, --help               Show this help
+
+set -uo pipefail
+
+LIB_DIR="${AARAMBH_LIB_DIR:-/usr/local/lib/aarambh}"
+THEMES="accordion minimal glass-sidebar editorial editorial-dark cinema honeycomb constellation picker-wheel dial hud"
+ACTIONS=()
+
+usage() {
+    sed -n '3,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+
+needs_value() {
+    if [ -z "${2:-}" ]; then
+        echo "aarambh: error: $1 needs a value" >&2
+        usage 1
+    fi
+}
+
+parse_arguments() {
+    if [ "$#" -eq 0 ]; then
+        ACTIONS+=("status")
+    fi
+
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -t|--theme)
+                needs_value "$1" "${2:-}"
+                ACTIONS+=("theme:$2")
+                shift
+                ;;
+            -d|--default)
+                needs_value "$1" "${2:-}"
+                ACTIONS+=("default:$2")
+                shift
+                ;;
+            -T|--timeout)
+                needs_value "$1" "${2:-}"
+                ACTIONS+=("timeout:$2")
+                shift
+                ;;
+            --themes) ACTIONS+=("themes") ;;
+            -l|--list) ACTIONS+=("list") ;;
+            -s|--status) ACTIONS+=("status") ;;
+            -h|--help) usage 0 ;;
+            *)
+                echo "aarambh: error: unknown option $1" >&2
+                usage 1
+                ;;
+        esac
+        shift
+    done
+}
+
+parse_arguments "$@"
+
+if [ "$(id -u)" != 0 ] && [ -z "${AARAMBH_ROOT:-}" ]; then
+    exec sudo bash "${BASH_SOURCE[0]}" "$@"
+fi
+
+# shellcheck source=../lib/common.sh
+. "$LIB_DIR/common.sh"
+
+if ! load_environment; then
+    die "$ENV_FILE not found. Run hooks/setup.sh on this OS first."
+fi
+
+CONFIG_FILE="$ESP_DIR/aarambh.conf"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    die "$CONFIG_FILE not found. Is the EFI partition mounted?"
+fi
+
+config_value() {
+    awk -v key="$1" '$1 == key { sub(/^[^ \t]+[ \t]*/, ""); value = $0 } END { print value }' "$CONFIG_FILE"
+}
+
+set_config_value() {
+    local updated
+
+    updated=$(mktemp)
+    CONFIG_KEY="$1" CONFIG_VALUE="$2" awk '
+        BEGIN {
+            key = ENVIRON["CONFIG_KEY"]
+            line = key " " ENVIRON["CONFIG_VALUE"]
+        }
+        $1 == key {
+            if (!done) {
+                print line
+                done = 1
+            }
+            next
+        }
+        /^entry[ \t]/ && !done {
+            print line
+            print ""
+            done = 1
+        }
+        { print }
+        END {
+            if (!done) {
+                print line
+            }
+        }
+    ' "$CONFIG_FILE" > "$updated"
+
+    cat "$updated" > "$CONFIG_FILE"
+    rm -f "$updated"
+    sync
+}
+
+configured_entries() {
+    awk -F'|' '/^entry[ \t]/ {
+        title = $1
+        key = $5
+        sub(/^entry[ \t]+/, "", title)
+        gsub(/^[ \t]+|[ \t]+$/, "", title)
+        gsub(/^[ \t]+|[ \t]+$/, "", key)
+        print key "|" title
+    }' "$CONFIG_FILE"
+}
+
+detected_entries() {
+    local directory
+    local name
+    local key
+
+    for directory in "$ESP_ROOT"/EFI/*/; do
+        if [ ! -d "$directory" ]; then
+            continue
+        fi
+
+        name=$(basename "$directory" | tr 'A-Z' 'a-z')
+        case "$name" in
+            boot|aarambh|linux|tools) continue ;;
+            microsoft) key=windows ;;
+            redhat) key=rhel ;;
+            systemd) key=systemd-boot ;;
+            grub) key=linux ;;
+            *) key=$name ;;
+        esac
+
+        if ! configured_entries | cut -d'|' -f1 | grep -qxF "$key"; then
+            echo "$key|$(basename "$directory")"
+        fi
+    done | sort -u
+}
+
+known_keys() {
+    {
+        configured_entries
+        detected_entries
+    } | cut -d'|' -f1 | grep -v '^$'
+}
+
+lowercase() {
+    printf '%s' "$1" | tr 'A-Z' 'a-z'
+}
+
+resolve_default() {
+    local wanted
+
+    wanted=$(lowercase "$1")
+
+    case "$1" in
+        ''|*[!0-9]*) ;;
+        *)
+            echo "$1"
+            return 0
+            ;;
+    esac
+
+    while IFS='|' read -r key title; do
+        if [ -n "$key" ] && { [ "$(lowercase "$key")" = "$wanted" ] || [ "$(lowercase "$title")" = "$wanted" ]; }; then
+            echo "$key"
+            return 0
+        fi
+    done < <(configured_entries; detected_entries)
+
+    return 1
+}
+
+show_themes() {
+    local current
+    local theme
+
+    current=$(config_value theme)
+
+    for theme in $THEMES; do
+        if [ "$theme" = "${current:-accordion}" ]; then
+            echo "* $theme"
+        else
+            echo "  $theme"
+        fi
+    done
+}
+
+show_entries() {
+    local default
+
+    default=$(lowercase "$(config_value default)")
+
+    while IFS='|' read -r key title; do
+        local mark=" "
+
+        if [ -n "$key" ] && [ "$(lowercase "$key")" = "$default" ]; then
+            mark="*"
+        fi
+
+        printf '%s %-14s %s\n' "$mark" "${key:--}" "$title"
+    done < <(configured_entries)
+
+    while IFS='|' read -r key folder; do
+        local mark=" "
+
+        if [ "$(lowercase "$key")" = "$default" ]; then
+            mark="*"
+        fi
+
+        printf '%s %-14s found at boot in \\EFI\\%s\n' "$mark" "$key" "$folder"
+    done < <(detected_entries)
+}
+
+show_status() {
+    echo "config:  $CONFIG_FILE"
+    echo "theme:   $(config_value theme)"
+    echo "default: $(config_value default)"
+    echo "timeout: $(config_value timeout)"
+}
+
+apply_theme() {
+    if [[ " $THEMES " != *" $1 "* ]]; then
+        echo "aarambh: error: unknown theme '$1'. Available themes:" >&2
+        show_themes >&2
+        exit 1
+    fi
+
+    set_config_value theme "$1"
+    log "theme set to $1"
+}
+
+apply_default() {
+    local key
+
+    if ! key=$(resolve_default "$1"); then
+        echo "aarambh: error: no entry called '$1'. Entries:" >&2
+        show_entries >&2
+        exit 1
+    fi
+
+    set_config_value default "$key"
+    log "default set to $key"
+}
+
+apply_timeout() {
+    case "$1" in
+        ''|*[!0-9]*) die "timeout must be a number of seconds" ;;
+    esac
+
+    set_config_value timeout "$1"
+    log "timeout set to $1 seconds"
+}
+
+for action in "${ACTIONS[@]}"; do
+    case "$action" in
+        theme:*) apply_theme "${action#theme:}" ;;
+        default:*) apply_default "${action#default:}" ;;
+        timeout:*) apply_timeout "${action#timeout:}" ;;
+        themes) show_themes ;;
+        list) show_entries ;;
+        status) show_status ;;
+    esac
+done

@@ -1,0 +1,23 @@
+# On systems that jump back into the initramfs at shutdown (dracut, and
+# mkinitcpio's shutdown ramfs), Plymouth reloads its theme from
+# /run/initramfs. That copy was built before the theme changed, so give it
+# the installed Aarambh theme, including the restart and shutdown frames
+# aarambh-clear copied in at boot. Ordered like Plymouth's own
+# plymouth-switch-root-initramfs.service, just before it.
+[Unit]
+Description=Give the shutdown initramfs the current Aarambh splash
+DefaultDependencies=no
+Conflicts=dracut-shutdown.service
+After=dracut-shutdown.service mkinitcpio-generate-shutdown-ramfs.service
+After=plymouth-halt.service plymouth-reboot.service plymouth-poweroff.service plymouth-kexec.service
+Before=plymouth-switch-root-initramfs.service
+ConditionPathExists=/run/initramfs/bin/sh
+ConditionPathIsDirectory=/usr/share/plymouth/themes/aarambh
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'mkdir -p /run/initramfs/usr/share/plymouth/themes/aarambh && cp -f /usr/share/plymouth/themes/aarambh/* /run/initramfs/usr/share/plymouth/themes/aarambh/'
+
+[Install]
+WantedBy=halt.target poweroff.target reboot.target kexec.target

@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# Runs once per boot: forget the one-time kernel choice, and bring the
+# installed Plymouth theme up to date: the current script from the ESP and
+# the restart and shutdown splash that Aarambh drew for the current theme.
+
+. /etc/aarambh.env
+
+THEME_DIR=/usr/share/plymouth/themes/aarambh
+SPLASH_DIR="$ESP_DIR/shutdown"
+
+if [ -f "$ESP_DIR/next-$KEY.cfg" ]; then
+    : > "$ESP_DIR/next-$KEY.cfg"
+fi
+
+sync_splash() {
+    for part in bg reboot shutdown dot; do
+        if [ ! -f "$SPLASH_DIR/$KEY-$part.png" ]; then
+            rm -f "$THEME_DIR"/still-*.png
+            return
+        fi
+    done
+
+    for part in bg reboot shutdown dot; do
+        if ! cmp -s "$SPLASH_DIR/$KEY-$part.png" "$THEME_DIR/still-$part.png"; then
+            cp "$SPLASH_DIR/$KEY-$part.png" "$THEME_DIR/still-$part.png.new"
+            mv -f "$THEME_DIR/still-$part.png.new" "$THEME_DIR/still-$part.png"
+        fi
+    done
+}
+
+# setup.sh installs the Plymouth script once; take a newer one from the ESP
+# (copied there by every scripts/install.sh) so restart and shutdown always
+# run the current script, even before setup.sh is run again.
+sync_script() {
+    for file in aarambh.script aarambh.plymouth; do
+        if [ -f "$ESP_DIR/plymouth/$KEY/$file" ] \
+            && ! cmp -s "$ESP_DIR/plymouth/$KEY/$file" "$THEME_DIR/$file"; then
+            cp "$ESP_DIR/plymouth/$KEY/$file" "$THEME_DIR/$file.new"
+            mv -f "$THEME_DIR/$file.new" "$THEME_DIR/$file"
+        fi
+    done
+}
+
+if [ -d "$THEME_DIR" ]; then
+    sync_script
+    sync_splash
+fi

@@ -1,0 +1,5 @@
+@oneshot grub
+Linux 7.3.0-9-generic|gnulinux-advanced-test>gnulinux-7.3.0-9-generic-advanced-test
+Linux 7.3.0-9-generic (recovery)|gnulinux-advanced-test>gnulinux-7.3.0-9-generic-recovery-test
+Linux 7.3.0-8-generic|gnulinux-advanced-test>gnulinux-7.3.0-8-generic-advanced-test
+Linux 7.3.0-8-generic (recovery)|gnulinux-advanced-test>gnulinux-7.3.0-8-generic-recovery-test

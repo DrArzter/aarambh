@@ -1,0 +1,42 @@
+# Changelog
+
+All notable changes to Aarambh are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0] - 2026-11-08
+
+First public release.
+
+### Added
+
+- Graphical UEFI boot menu that starts Linux kernels directly from the EFI
+  partition, with GRUB or the OS's own loader as a fallback.
+- 11 themes: Accordion (default), Minimal, Glass Sidebar, Editorial,
+  Editorial Dark, Cinema, Honeycomb, Constellation, Picker Wheel, Dial and HUD.
+- Advanced options: pick any installed kernel or recovery entry for one boot.
+- Boot options editor: press E to edit the kernel command line for one boot,
+  like GRUB's `e`. Can be turned off with `edit no`.
+- Plymouth boot splash that continues the current theme's launch animation,
+  with no initramfs rebuild when the theme changes.
+- Restart and shutdown splashes that follow the current theme.
+- Autodetection of Windows and other EFI loaders on the EFI partition.
+- Logos, wallpapers and Plymouth themes for 24 distributions, Windows and
+  generic Linux.
+- `aarambh` command to set the theme, default OS and timeout from any
+  connected OS (`--theme`, `--default`, `--timeout`, `--themes`, `--list`).
+- `scripts/install.sh` with `--theme`, `--default`, `--dry-run` and
+  `--list-themes`; `make install THEME=... DEFAULT=...`.
+- `hooks/setup.sh` for each Linux OS: kernel lists, kernel update hooks,
+  Plymouth theme and boot service, for the Debian, Fedora/Red Hat, openSUSE,
+  Arch, Gentoo and Void families. `hooks/uninstall.sh` reverts everything.
+- Default entry chosen by OS id or menu title, so it survives entries changing
+  order.
+- QEMU test runner (`make qemu THEME=... DEFAULT=...`) and automated hook tests
+  (`make test`).
+
+[Unreleased]: https://github.com/NarkAgni/aarambh/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/NarkAgni/aarambh/releases/tag/v0.1.0

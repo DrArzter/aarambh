@@ -1,0 +1,4 @@
+systemctl daemon-reload
+systemctl enable aarambh-clear.service aarambh-shutdown-splash.service
+grub2-mkconfig -o /boot/grub2/grub.cfg
+grub2-probe --target=fs_uuid /

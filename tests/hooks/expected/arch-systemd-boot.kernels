@@ -1,0 +1,2 @@
+@oneshot systemd-boot
+Arch Linux|arch.conf|\vmlinuz-linux|\intel-ucode.img,\initramfs-linux.img|root=UUID=3333 rw quiet

@@ -1,0 +1,116 @@
+W = Window.GetWidth();
+H = Window.GetHeight();
+k = H / 1080;
+Window.SetBackgroundTopColor(0, 0, 0);
+Window.SetBackgroundBottomColor(0, 0, 0);
+
+mode = Plymouth.GetMode();
+
+# On restart and shutdown, use the current Aarambh theme when Aarambh has
+# left its splash here (copied by aarambh-clear at boot). The title rows sit
+# at 0.51 of the image height, 0.125 high, as in src/boot/plymouth_overlay.h.
+still = NULL;
+if (mode == "shutdown")
+  still = Image("still-shutdown.png");
+else if (mode == "reboot")
+  still = Image("still-reboot.png");
+if (still)
+  bgi = Image("still-bg.png");
+if (!bgi)
+  still = NULL;
+if (!still)
+  bgi = Image("bg.png");
+
+ih = bgi.GetHeight();
+s = W / bgi.GetWidth();
+if (H / ih > s)
+  s = H / ih;
+bgi = bgi.Scale(Math.Int(bgi.GetWidth() * s + 1), Math.Int(ih * s + 1));
+ox = Math.Int((W - bgi.GetWidth()) / 2);
+oy = Math.Int((H - bgi.GetHeight()) / 2);
+bg = Sprite(bgi);
+bg.SetPosition(ox, oy, -100);
+
+if (still) {
+  ti = still.Scale(bgi.GetWidth(), Math.Int(still.GetHeight() * s + 1));
+  title = Sprite(ti);
+  title.SetPosition(ox, oy + Math.Int(Math.Int(ih * 0.51) * s), 2);
+  u = bgi.GetHeight();
+  dcx = ox + bgi.GetWidth() / 2;
+  dcy = oy + u * 0.725;
+  r = u * 0.0068;
+  gap = u * 0.028;
+  dimg = Image("still-dot.png");
+} else {
+  ls = Math.Int(H * 0.2);
+  logo = Sprite(Image("logo.png").Scale(ls, ls));
+  logo.SetPosition(Math.Int((W - ls) / 2), Math.Int(H * 0.3), 1);
+
+  if (mode == "shutdown")
+    ti = Image("title-shutdown.png");
+  else if (mode == "reboot")
+    ti = Image("title-reboot.png");
+  else
+    ti = Image("title.png");
+  ti = ti.Scale(Math.Int(ti.GetWidth() * k), Math.Int(ti.GetHeight() * k));
+  title = Sprite(ti);
+  title.SetPosition(Math.Int((W - ti.GetWidth()) / 2), Math.Int(H * 0.6 - 100 * k), 2);
+
+  dcx = W / 2;
+  dcy = H * 0.725;
+  r = H * 0.0068;
+  gap = H * 0.028;
+  dimg = Image("dot.png");
+}
+
+dot = dimg.Scale(Math.Int(r * 2), Math.Int(r * 2));
+for (i = 0; i < 3; i++) {
+  dots[i] = Sprite(dot);
+  dots[i].SetPosition(Math.Int(dcx + (i - 1) * gap - r), Math.Int(dcy - r), 4);
+}
+
+frame = 0;
+fun refresh() {
+  global.frame++;
+  step = Math.Int(global.frame / 13);
+  active = step - Math.Int(step / 3) * 3;
+  for (i = 0; i < 3; i++) {
+    if (i == active)
+      global.dots[i].SetOpacity(1);
+    else
+      global.dots[i].SetOpacity(0.43);
+  }
+}
+Plymouth.SetRefreshFunction(refresh);
+
+pimg = Image("prompt.png");
+pimg = pimg.Scale(Math.Int(pimg.GetWidth() * k), Math.Int(pimg.GetHeight() * k));
+bsz = Math.Int(H * 0.012) + 1;
+bimg = Image("dot.png").Scale(bsz, bsz);
+
+fun display_password(prompt, bullets) {
+  global.ps = Sprite(global.pimg);
+  global.ps.SetPosition(Math.Int((global.W - global.pimg.GetWidth()) / 2), Math.Int(global.H * 0.8), 10);
+  n = bullets;
+  if (n > 30)
+    n = 30;
+  gap = global.bsz * 1.8;
+  x0 = global.W / 2 - (n * gap) / 2;
+  for (i = 0; i < 30; i++) {
+    if (i < n) {
+      global.bs[i] = Sprite(global.bimg);
+      global.bs[i].SetPosition(Math.Int(x0 + i * gap), Math.Int(global.H * 0.865), 10);
+    } else {
+      global.bs[i] = NULL;
+    }
+  }
+}
+
+fun display_normal() {
+  global.ps = NULL;
+  for (i = 0; i < 30; i++)
+    global.bs[i] = NULL;
+}
+
+Plymouth.SetDisplayPasswordFunction(display_password);
+Plymouth.SetDisplayNormalFunction(display_normal);

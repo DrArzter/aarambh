@@ -1,0 +1,10 @@
+[Unit]
+Description=Reset Aarambh one-time kernel choice
+RequiresMountsFor=/boot/efi
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/aarambh-clear
+
+[Install]
+WantedBy=multi-user.target

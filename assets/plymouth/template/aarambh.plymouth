@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Aarambh
+Description=Aarambh boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/aarambh
+ScriptFile=/usr/share/plymouth/themes/aarambh/aarambh.script
