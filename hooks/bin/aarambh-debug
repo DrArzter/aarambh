@@ -1,0 +1,563 @@
+#!/bin/bash
+#
+# Collect everything needed to understand an Aarambh problem into one report:
+# platform, Secure Boot, firmware boot entries, files on the EFI partition,
+# the installed commands, kernel lists, GRUB, initramfs, Plymouth, graphics
+# and the logs of this boot and the previous one.
+#
+# Run it after the system has fully started. It changes nothing on the system
+# and writes ~/aarambh-debug-<date>.txt, with your user and host name hidden.
+#
+# Usage: aarambh-debug          (installed by setup.sh)
+#        make debug             (from the source folder, works even when
+#                                the installation did not finish)
+
+set -uo pipefail
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+USER_PATH="$PATH"
+
+if [ "${1:-}" = --user-path ]; then
+    USER_PATH="${2:-}"
+fi
+
+if [ "$(id -u)" != 0 ]; then
+    echo "aarambh-debug: root is needed to read the EFI partition and the system logs"
+    exec sudo bash "$SCRIPT_PATH" --user-path "$PATH"
+fi
+
+export LC_ALL=C
+
+SECURE_BOOT_VAR=/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c
+ENV_FILE=/etc/aarambh.env
+INVOKING_USER="${SUDO_USER:-root}"
+REPORT_HOME="$(getent passwd "$INVOKING_USER" | cut -d: -f6)"
+REPORT="${REPORT_HOME:-/root}/aarambh-debug-$(date +%Y%m%d-%H%M%S).txt"
+BODY="$(mktemp)"
+FINDINGS=()
+
+KEY=""
+ESP_ROOT=""
+ESP_DIR=""
+BOOTLOADER=""
+
+trap 'rm -f "$BODY"' EXIT
+
+has_command() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+problem() {
+    FINDINGS+=("[PROBLEM] $*")
+}
+
+note() {
+    FINDINGS+=("[NOTE]    $*")
+}
+
+good() {
+    FINDINGS+=("[OK]      $*")
+}
+
+section() {
+    printf '\n\n===== %s =====\n' "$1" >> "$BODY"
+}
+
+show() {
+    printf '\n$ %s\n' "$*" >> "$BODY"
+    timeout 60 bash -c "$*" >> "$BODY" 2>&1
+}
+
+show_file() {
+    if [ -f "$1" ]; then
+        printf '\n--- %s\n' "$1" >> "$BODY"
+        cat "$1" >> "$BODY" 2>&1
+    else
+        printf '\n--- %s (missing)\n' "$1" >> "$BODY"
+    fi
+}
+
+progress() {
+    echo "aarambh-debug: $*"
+}
+
+check_platform() {
+    local machine
+    local firmware_bits
+    local secure_boot
+
+    progress "platform"
+    section "Platform"
+    show "date -R"
+    show "uname -a"
+    show_file /etc/os-release
+    show "cat /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name /sys/class/dmi/id/bios_version /sys/class/dmi/id/bios_date"
+
+    machine=$(uname -m)
+    if [ "$machine" = x86_64 ]; then
+        good "CPU architecture is x86_64"
+    else
+        problem "CPU architecture is $machine; Aarambh supports x86_64 only"
+    fi
+
+    if [ ! -d /sys/firmware/efi ]; then
+        problem "this boot used legacy BIOS (CSM) mode; Aarambh needs UEFI"
+        return
+    fi
+
+    firmware_bits=$(cat /sys/firmware/efi/fw_platform_size 2>/dev/null || echo unknown)
+    echo "UEFI firmware: ${firmware_bits}-bit" >> "$BODY"
+    if [ "$firmware_bits" = 32 ]; then
+        problem "the firmware is 32-bit UEFI; Aarambh needs 64-bit UEFI"
+    fi
+
+    secure_boot=$(od -An -t u1 -j4 -N1 "$SECURE_BOOT_VAR" 2>/dev/null | tr -d ' ')
+    echo "SecureBoot variable: ${secure_boot:-unreadable}" >> "$BODY"
+    if has_command mokutil; then
+        show "mokutil --sb-state"
+    fi
+
+    if [ "$secure_boot" = 1 ]; then
+        problem "Secure Boot is ON; the firmware refuses unsigned Aarambh and direct kernel boot"
+    else
+        good "Secure Boot is off"
+    fi
+}
+
+check_installation() {
+    local directory
+    local found=""
+
+    progress "installed files"
+    section "Installed commands and files"
+
+    if [ -f "$ENV_FILE" ]; then
+        show_file "$ENV_FILE"
+        # shellcheck source=/dev/null
+        . "$ENV_FILE"
+        ESP_ROOT="${ESP_ROOT:-${ESP_DIR%/EFI/aarambh}}"
+        good "setup.sh has run on this OS (key: $KEY)"
+    else
+        problem "$ENV_FILE is missing: hooks/setup.sh never finished on this OS"
+    fi
+
+    show "ls -la /usr/local/bin/aarambh* /usr/local/sbin/aarambh* /usr/local/lib/aarambh/"
+    show_file /etc/aarambh/manifest
+    show_file /etc/aarambh/cmdline
+    echo "PATH of $INVOKING_USER: $USER_PATH" >> "$BODY"
+
+    for directory in /usr/local/bin /usr/local/sbin; do
+        if [ -x "$directory/aarambh" ]; then
+            found="$directory"
+            break
+        fi
+    done
+
+    if [ -z "$found" ]; then
+        problem "the 'aarambh' command is not installed: setup.sh stopped before installing it"
+    elif [[ ":$USER_PATH:" != *":$found:"* ]]; then
+        problem "'aarambh' is in $found, which is not in your PATH ('command not found'); rerun setup.sh from the latest Aarambh"
+    else
+        good "'aarambh' command found in $found"
+    fi
+
+    show "grep -rhs 'secure_path' /etc/sudoers /etc/sudoers.d/"
+    if [ -n "$found" ] && grep -rhs '^[[:space:]]*Defaults.*secure_path' /etc/sudoers /etc/sudoers.d/ \
+        | grep -qv "$found"; then
+        note "sudo's secure_path does not include $found: run 'aarambh' without sudo, it asks for the password itself"
+    fi
+}
+
+find_esp() {
+    local directory
+
+    if [ -n "$ESP_ROOT" ]; then
+        return
+    fi
+
+    for directory in /boot/efi /efi /boot; do
+        if [ "$(findmnt -no FSTYPE --mountpoint "$directory" 2>/dev/null)" = vfat ] && [ -d "$directory/EFI" ]; then
+            ESP_ROOT=$directory
+            return
+        fi
+    done
+}
+
+kernel_version() {
+    file -b "$1" 2>/dev/null | sed -n 's/.*version \([^ ,]*\).*/\1/p'
+}
+
+modules_exist() {
+    [ -d "/lib/modules/$1" ] || [ -d "/usr/lib/modules/$1" ]
+}
+
+check_root_tokens() {
+    local token
+    local value
+    local current_root
+
+    current_root=$(findmnt -no UUID / 2>/dev/null)
+
+    for token in $(grep -o 'root=[^ |]*' "$1" | sort -u); do
+        value=${token#root=}
+        case "$value" in
+            UUID=*)
+                if ! blkid -U "${value#UUID=}" >/dev/null 2>&1; then
+                    problem "$(basename "$1") boots with $token, but no filesystem has that UUID"
+                elif [ "${value#UUID=}" != "$current_root" ]; then
+                    note "$(basename "$1") boots with $token, this system's / is UUID=$current_root"
+                fi
+                ;;
+            PARTUUID=*)
+                if [ ! -e "/dev/disk/by-partuuid/${value#PARTUUID=}" ]; then
+                    problem "$(basename "$1") boots with $token, but no partition has that PARTUUID"
+                fi
+                ;;
+        esac
+    done
+}
+
+check_direct_boot_copy() {
+    local linux_dir="$ESP_DIR/linux/$KEY"
+    local version
+
+    if [ ! -f "$linux_dir/vmlinuz" ]; then
+        note "no direct-boot kernel copy for '$KEY'; this OS starts through its own loader"
+        return
+    fi
+
+    show "ls -la '$linux_dir'"
+    show "file -b '$linux_dir/vmlinuz'"
+
+    version=$(kernel_version "$linux_dir/vmlinuz")
+    if [ -z "$version" ]; then
+        note "could not read the version of the direct-boot kernel"
+    elif ! modules_exist "$version"; then
+        problem "the direct-boot kernel is $version, but /lib/modules/$version is gone: no drivers, black screen; run 'sudo /usr/local/sbin/aarambh-kernels'"
+    elif [ "$version" != "$(uname -r)" ]; then
+        note "the direct-boot kernel is $version, the running kernel is $(uname -r)"
+    else
+        good "the direct-boot kernel matches the running kernel ($version)"
+    fi
+
+    if [ ! -s "$linux_dir/initrd.img" ]; then
+        problem "the direct-boot initrd is missing or empty"
+    fi
+}
+
+check_esp() {
+    local config
+
+    progress "EFI partition"
+    section "EFI partition"
+    find_esp
+    ESP_DIR="${ESP_DIR:-$ESP_ROOT/EFI/aarambh}"
+    config="$ESP_DIR/aarambh.conf"
+
+    show "findmnt -t vfat"
+    show "lsblk -o NAME,SIZE,TYPE,FSTYPE,PARTTYPENAME,PARTUUID,MOUNTPOINTS"
+
+    if [ -z "$ESP_ROOT" ]; then
+        problem "no EFI system partition is mounted at /boot/efi, /efi or /boot"
+        return
+    fi
+
+    show "df -h '$ESP_ROOT'"
+    show "ls -la '$ESP_ROOT/EFI' '$ESP_DIR'"
+    show "sha256sum '$ESP_DIR/aarambh.efi'"
+    show_file "$config"
+    show "head -n 40 '$ESP_DIR'/*.kernels"
+    show "head -n 5 '$ESP_DIR'/next-*.cfg"
+
+    if [ ! -f "$ESP_DIR/aarambh.efi" ]; then
+        problem "$ESP_DIR/aarambh.efi is missing: scripts/install.sh did not finish"
+        return
+    fi
+
+    if [ "$(df --output=avail -B1M "$ESP_ROOT" | tail -n1)" -lt 20 ]; then
+        problem "less than 20 MB free on the EFI partition"
+    fi
+
+    if [ -z "$KEY" ]; then
+        return
+    fi
+
+    if grep -Eq "^entry[[:space:]].*\|[[:space:]]*${KEY}[[:space:]]*(\||\$)" "$config"; then
+        good "aarambh.conf has a menu entry for '$KEY'"
+    else
+        problem "aarambh.conf has no menu entry for '$KEY'"
+    fi
+
+    if [ -s "$ESP_DIR/$KEY.kernels" ]; then
+        check_root_tokens "$ESP_DIR/$KEY.kernels"
+    else
+        problem "$KEY.kernels is missing or empty: run 'sudo /usr/local/sbin/aarambh-kernels'"
+    fi
+
+    check_direct_boot_copy
+}
+
+check_boot_entries() {
+    local listing
+    local aarambh_number
+    local current
+    local entry_partuuid
+    local esp_partuuid
+
+    progress "firmware boot entries"
+    section "Firmware boot entries"
+
+    if ! has_command efibootmgr; then
+        problem "efibootmgr is not installed, firmware entries cannot be checked"
+        return
+    fi
+
+    listing=$(efibootmgr -v 2>&1)
+    echo "$listing" >> "$BODY"
+
+    aarambh_number=$(sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\{0,1\} Aarambh.*/\1/p' <<< "$listing" | head -n1)
+    current=$(sed -n 's/^BootCurrent: *//p' <<< "$listing")
+
+    if [ -z "$aarambh_number" ]; then
+        problem "there is no 'Aarambh' firmware boot entry"
+        return
+    fi
+
+    if [ "$current" = "$aarambh_number" ]; then
+        good "this boot started through Aarambh (Boot$current)"
+    else
+        note "this boot did NOT start through Aarambh (BootCurrent $current, Aarambh is Boot$aarambh_number)"
+    fi
+
+    if ! sed -n 's/^BootOrder: *//p' <<< "$listing" | grep -q "^$aarambh_number"; then
+        note "Aarambh is not first in BootOrder"
+    fi
+
+    entry_partuuid=$(grep "^Boot$aarambh_number" <<< "$listing" | grep -o 'GPT,[0-9a-fA-F-]*' | cut -d, -f2 | tr 'A-F' 'a-f')
+    esp_partuuid=$(blkid -s PARTUUID -o value "$(findmnt -no SOURCE "$ESP_ROOT" 2>/dev/null)" 2>/dev/null | tr 'A-F' 'a-f')
+
+    if [ -n "$entry_partuuid" ] && [ -n "$esp_partuuid" ] && [ "$entry_partuuid" != "$esp_partuuid" ]; then
+        problem "the Aarambh boot entry points to partition $entry_partuuid, the mounted ESP is $esp_partuuid"
+    fi
+}
+
+check_boot_path() {
+    progress "kernel command line"
+    section "This boot"
+    show_file /proc/cmdline
+
+    if [ ! -d /sys/firmware/efi ]; then
+        return
+    elif grep -q 'BOOT_IMAGE=' /proc/cmdline; then
+        note "this boot went through GRUB (BOOT_IMAGE= on the command line)"
+    else
+        note "this boot was started without GRUB (direct boot or systemd-boot)"
+    fi
+
+    show "lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINTS"
+    if lsblk -no FSTYPE 2>/dev/null | grep -q crypto_LUKS; then
+        note "the disk is encrypted: a black screen can be the hidden password prompt (type it and press Enter, or Esc to see it)"
+    fi
+}
+
+check_grub() {
+    if [ "$BOOTLOADER" != grub ] && [ ! -f /etc/default/grub ]; then
+        return
+    fi
+
+    progress "GRUB"
+    section "GRUB"
+    show "grep -v '^#' /etc/default/grub | grep -v '^\$'"
+    show "diff /etc/default/grub.aarambh-backup /etc/default/grub"
+    show "ls -la /etc/grub.d/"
+}
+
+list_initrd() {
+    if has_command lsinitramfs; then
+        lsinitramfs "$1" 2>/dev/null
+    elif has_command lsinitrd; then
+        lsinitrd "$1" 2>/dev/null
+    elif has_command lsinitcpio; then
+        lsinitcpio "$1" 2>/dev/null
+    fi
+}
+
+check_initrd_theme() {
+    local image=$1
+    local contents
+
+    if [ ! -f "$image" ] || ! has_command plymouthd; then
+        return
+    fi
+
+    contents=$(timeout 120 bash -c "$(declare -f has_command list_initrd); list_initrd '$image'")
+    echo "$image: $(grep -c plymouth <<< "$contents") plymouth files, $(grep -c 'themes/aarambh' <<< "$contents") aarambh theme files" >> "$BODY"
+
+    if [ -n "$contents" ] && ! grep -q 'themes/aarambh' <<< "$contents"; then
+        problem "$(basename "$image") has no Aarambh Plymouth theme inside: the splash cannot show"
+    fi
+}
+
+check_initramfs() {
+    progress "initramfs (this can take a minute)"
+    section "Initramfs"
+    show_file /etc/initramfs-tools/initramfs.conf
+    show_file /etc/initramfs-tools/modules
+    show "grep -hE '^(HOOKS|MODULES)=' /etc/mkinitcpio.conf /etc/mkinitcpio.conf.d/*.conf"
+    show "cat /etc/dracut.conf /etc/dracut.conf.d/*.conf"
+    show "ls -la /boot"
+
+    if grep -qs '^MODULES=dep' /etc/initramfs-tools/initramfs.conf; then
+        note "initramfs-tools uses MODULES=dep (set by Aarambh); if the root disk is not found at boot, try MODULES=most"
+    fi
+
+    check_initrd_theme "/boot/initrd.img-$(uname -r)"
+    check_initrd_theme "/boot/initramfs-$(uname -r).img"
+    if [ -n "$KEY" ]; then
+        check_initrd_theme "$ESP_DIR/linux/$KEY/initrd.img"
+    fi
+}
+
+check_plymouth() {
+    progress "Plymouth"
+    section "Plymouth"
+
+    if ! has_command plymouthd; then
+        note "Plymouth is not installed, so no boot splash"
+        return
+    fi
+
+    show "plymouth-set-default-theme"
+    show "update-alternatives --display default.plymouth"
+    show_file /etc/plymouth/plymouthd.conf
+    show "ls -la /usr/share/plymouth/themes/aarambh"
+    show "ls /usr/lib*/plymouth/script.so /usr/lib/*/plymouth/script.so"
+
+    if ! grep -qw splash /proc/cmdline; then
+        note "'splash' is not on the kernel command line, Plymouth stays hidden"
+    fi
+}
+
+check_graphics() {
+    local modeset
+
+    progress "graphics"
+    section "Graphics"
+    show "lspci -nnk | grep -EA3 'VGA|3D|Display'"
+    show "lsmod | grep -E '^(nvidia|nouveau|i915|xe|amdgpu|radeon|simpledrm)'"
+    show "cat /proc/fb"
+    show "ls -la /dev/dri"
+
+    if [ -d /sys/module/nvidia_drm ]; then
+        modeset=$(cat /sys/module/nvidia_drm/parameters/modeset 2>/dev/null)
+        if [ "$modeset" != Y ]; then
+            problem "NVIDIA driver without nvidia-drm.modeset=1: the screen stays black until the login screen"
+        else
+            good "NVIDIA kernel modesetting is on"
+        fi
+    fi
+}
+
+journal_section() {
+    local boot=$1
+    local label=$2
+
+    section "Logs: $label"
+    show "journalctl -b $boot -p 3 --no-pager | tail -n 150"
+    show "journalctl -b $boot -k --no-pager | grep -iE 'efi|fb|drm|nvidia|nouveau|i915|amdgpu|plymouth|crypt|root|panic|timed out|fail|error' | tail -n 200"
+    show "journalctl -b $boot --no-pager -u 'plymouth*' -u display-manager -u gdm -u sddm -u lightdm -u 'aarambh*' | tail -n 120"
+}
+
+check_logs() {
+    progress "logs"
+
+    if ! has_command journalctl; then
+        section "Logs"
+        show "dmesg | grep -iE 'efi|fb|drm|nvidia|i915|amdgpu|plymouth|crypt|root|panic|fail|error' | tail -n 200"
+        return
+    fi
+
+    section "Boots"
+    show "journalctl --list-boots --no-pager | tail -n 8"
+    show "systemctl --failed --no-pager"
+    show "systemctl status aarambh-clear.service aarambh-shutdown-splash.service --no-pager"
+
+    if [ ! -d /var/log/journal ]; then
+        note "logs of earlier boots are not kept; run 'sudo mkdir -p /var/log/journal && sudo systemctl restart systemd-journald', reproduce the problem, then run this again"
+    fi
+
+    journal_section 0 "this boot"
+    journal_section -1 "previous boot"
+}
+
+check_setup_detection() {
+    local setup=""
+
+    if [ -f "$SCRIPT_DIR/../setup.sh" ]; then
+        setup="$SCRIPT_DIR/../setup.sh"
+    elif [ -f "$ESP_DIR/hooks/setup.sh" ]; then
+        setup="$ESP_DIR/hooks/setup.sh"
+    fi
+
+    if [ -z "$setup" ]; then
+        return
+    fi
+
+    progress "setup.sh detection (dry run, nothing is changed)"
+    section "setup.sh --dry-run"
+    show "bash '$setup' --dry-run"
+}
+
+escape_sed() {
+    printf '%s' "$1" | sed 's/[][\.*^$/]/\\&/g'
+}
+
+hide_names() {
+    local host
+
+    host=$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null)
+
+    if [ "${#INVOKING_USER}" -ge 3 ] && [ "$INVOKING_USER" != root ]; then
+        sed -i "s/$(escape_sed "$INVOKING_USER")/<user>/g" "$REPORT"
+    fi
+
+    if [ "${#host}" -ge 3 ]; then
+        sed -i "s/$(escape_sed "$host")/<host>/g" "$REPORT"
+    fi
+}
+
+write_report() {
+    {
+        echo "Aarambh debug report"
+        echo "Created: $(date -R)"
+        echo
+        echo "===== Summary ====="
+        printf '%s\n' "${FINDINGS[@]}"
+        cat "$BODY"
+    } > "$REPORT"
+
+    hide_names
+    chown "$INVOKING_USER": "$REPORT" 2>/dev/null
+    chmod 644 "$REPORT"
+}
+
+check_platform
+check_installation
+check_esp
+check_boot_entries
+check_boot_path
+check_grub
+check_initramfs
+check_plymouth
+check_graphics
+check_logs
+check_setup_detection
+write_report
+
+echo
+printf '%s\n' "${FINDINGS[@]}"
+echo
+echo "Report saved to: $REPORT"
+echo "Please read it, then attach it to a new issue:"
+echo "  https://github.com/NarkAgni/aarambh/issues/new"

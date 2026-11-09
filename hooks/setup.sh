@@ -14,6 +14,7 @@ set -euo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR=/usr/local/lib/aarambh
 BIN_DIR=/usr/local/sbin
+COMMAND_DIR=/usr/local/bin
 LIB_FILES="common.sh cmdline.sh direct-boot.sh kernels-bls.sh kernels-scan.sh"
 
 DRY_RUN=0
@@ -100,9 +101,10 @@ install_scripts() {
 
     install_file 755 "$HOOK_DIR/bin/aarambh-kernels" "$ROOT$BIN_DIR/aarambh-kernels"
     install_file 755 "$HOOK_DIR/bin/aarambh-clear" "$ROOT$BIN_DIR/aarambh-clear"
-    install_file 755 "$HOOK_DIR/bin/aarambh" "$ROOT$BIN_DIR/aarambh"
+    install_file 755 "$HOOK_DIR/bin/aarambh" "$ROOT$COMMAND_DIR/aarambh"
+    install_file 755 "$HOOK_DIR/bin/aarambh-debug" "$ROOT$COMMAND_DIR/aarambh-debug"
 
-    run rm -f "$ROOT$LIB_DIR/ubuntu.sh" "$ROOT$LIB_DIR/fedora.sh"
+    run rm -f "$ROOT$BIN_DIR/aarambh" "$ROOT$LIB_DIR/ubuntu.sh" "$ROOT$LIB_DIR/fedora.sh"
 
     for file in $LIB_FILES; do
         install_file 644 "$HOOK_DIR/lib/$file" "$ROOT$LIB_DIR/$file"
@@ -136,7 +138,8 @@ print_summary() {
     fi
 
     df -h "$ESP_ROOT" 2>/dev/null | tail -n1 | awk '{print "aarambh: EFI partition free: " $4}'
-    log "change theme or default OS with: sudo aarambh --theme <name> --default <os>"
+    log "change theme or default OS with: aarambh --theme <name> --default <os>"
+    log "if anything goes wrong, run aarambh-debug and attach the report to an issue"
 }
 
 main() {

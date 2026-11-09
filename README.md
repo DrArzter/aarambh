@@ -9,6 +9,22 @@ It works with any Linux distribution that boots in UEFI mode, and with several
 of them installed side by side. Windows and other EFI loaders on the same disk
 are found automatically.
 
+> [!IMPORTANT]
+> **Supported hardware: 64-bit x86 PCs (`x86_64`, Intel or AMD) with 64-bit
+> UEFI firmware and Secure Boot turned off.**
+>
+> Not supported: ARM (`aarch64`, Raspberry Pi, Apple Silicon, Snapdragon
+> laptops), 32-bit PCs (`i686`), 32-bit UEFI firmware (some Atom tablets),
+> RISC-V, and legacy BIOS / CSM mode. The installer checks this and stops
+> before changing anything.
+>
+> Check your machine:
+>
+> ```sh
+> uname -m                                  # must print x86_64
+> cat /sys/firmware/efi/fw_platform_size    # must print 64 (missing = BIOS mode)
+> ```
+
 Aarambh runs before any operating system starts. Every section below can be
 expanded, so you can see exactly what it does to your machine before you
 install it.
@@ -145,6 +161,12 @@ never need this step.
 > **Secure Boot must be off.** Aarambh is not signed, so firmware with Secure
 > Boot enabled refuses to start it. See **Secure Boot** under *Safety and
 > recovery*.
+
+**Something went wrong?** Start the system once it boots again (see *Safety
+and recovery*), then run `aarambh-debug`, or `make debug` from the source
+folder if the install did not finish. It writes one report file with
+everything needed to find the problem; attach it to an
+[issue](https://github.com/NarkAgni/aarambh/issues/new).
 
 ---
 
@@ -292,8 +314,30 @@ hard-coded per distribution.
 Ubuntu and Fedora are tested on real hardware. Every family above is covered
 by the automated tests in `tests/hooks/` (`make test`), which run `setup.sh`
 and `uninstall.sh` against simulated installations. If something does not
-work on your distribution, please open an issue with the output of
-`sudo bash hooks/setup.sh --dry-run`.
+work on your distribution, please open an issue with the report from
+`aarambh-debug` (or `make debug`).
+
+</details>
+
+<details>
+<summary><b>Hardware and firmware</b></summary>
+
+<br>
+
+| Machine                                        | Status        |
+|------------------------------------------------|---------------|
+| 64-bit x86 PC (`x86_64`, Intel or AMD), 64-bit UEFI | Supported |
+| ARM64 (`aarch64`): Raspberry Pi, Apple Silicon, Snapdragon, ARM servers | Not supported |
+| 32-bit x86 (`i686`)                            | Not supported |
+| 64-bit CPU with 32-bit UEFI firmware           | Not supported |
+| RISC-V                                         | Not supported |
+| Legacy BIOS / CSM boot                         | Not supported |
+| Secure Boot on                                 | Not supported (turn it off) |
+
+`aarambh.efi` is built for `x86_64` UEFI only (`Makefile`: `ARCH := x86_64`),
+and the loaders it looks for (`shimx64.efi`, `grubx64.efi`,
+`systemd-bootx64.efi`) are the x86_64 ones. `make` and `scripts/install.sh`
+stop with an error on any other machine.
 
 </details>
 
@@ -461,6 +505,7 @@ Options:
 | `/etc/kernel/postinst.d/zzz-aarambh`, `postrm.d/zzz-aarambh` | systems with these folders | After kernel install/removal, after GRUB updates | Refresh trigger |
 | `/etc/kernel.d/post-install/99-aarambh`         | Void                          | After a kernel install                   | Refresh trigger |
 | `/usr/local/bin/aarambh`                        | every system                  | When you run it                          | Sets theme, default OS and timeout in `aarambh.conf` |
+| `/usr/local/bin/aarambh-debug`                  | every system                  | When you run it                          | Writes a debug report to your home folder, changes nothing |
 | `/usr/local/sbin/aarambh-clear`                 | systemd systems               | Called by the service below              | Empties `next-<os>.cfg` |
 | `/etc/systemd/system/aarambh-clear.service`     | systemd systems               | Once per boot                            | Makes a one-time kernel choice last for one boot only; copies the themed restart and shutdown frames into the Plymouth theme |
 | `/etc/systemd/system/aarambh-shutdown-splash.service` | systemd systems that return to the initramfs at shutdown (dracut, mkinitcpio) | At restart and shutdown | Gives the shutdown initramfs the current Aarambh splash, so Plymouth keeps the theme until power off |
@@ -962,6 +1007,113 @@ aarambh/
 ## Troubleshooting
 
 Known build and install problems, with the fix for each.
+
+<details open>
+<summary><b>Reporting a problem: the debug report</b></summary>
+
+<br>
+
+Boot the system normally (if Aarambh does not get you there, use the
+firmware boot menu, see *Safety and recovery*), then run:
+
+```sh
+aarambh-debug          # installed by setup.sh
+make debug             # from the source folder, also works if the install did not finish
+```
+
+It asks for your password, changes nothing, and saves
+`~/aarambh-debug-<date>.txt`. The first lines are a summary marked
+`[PROBLEM]`, `[NOTE]` and `[OK]`; the rest is the raw data behind them:
+
+| Checked                 | What it looks at |
+|-------------------------|------------------|
+| Platform                | CPU architecture, UEFI or BIOS, 32/64-bit firmware, Secure Boot |
+| Installation            | `/etc/aarambh.env`, the `aarambh` command and whether it is in your `PATH`, sudo's `secure_path` |
+| EFI partition           | `\EFI\aarambh\` files, `aarambh.conf`, the kernel lists, free space, the menu entry for this OS |
+| Direct boot             | Whether the copied kernel still has its modules in `/lib/modules`, `root=` points at a real filesystem, the initrd is not empty |
+| Firmware entries        | `efibootmgr -v`, whether this boot went through Aarambh, whether the entry points at the mounted ESP |
+| GRUB, initramfs         | `/etc/default/grub` and its changes, `MODULES=`, mkinitcpio `HOOKS`, whether the Aarambh Plymouth theme is inside the initramfs |
+| Plymouth, graphics      | Selected theme, `splash` on the command line, GPU and driver, NVIDIA modesetting, encrypted disks |
+| Logs                    | Errors and graphics/boot lines of this boot **and the previous one**, failed units, `setup.sh --dry-run` |
+
+Your user name and host name are replaced with `<user>` and `<host>`. Read
+the file before you attach it to an
+[issue](https://github.com/NarkAgni/aarambh/issues/new).
+
+If the summary says logs of earlier boots are not kept, turn them on, reproduce
+the problem once, and run it again:
+
+```sh
+sudo mkdir -p /var/log/journal && sudo systemctl restart systemd-journald
+```
+
+</details>
+
+<details>
+<summary><b><code>aarambh: command not found</code> after installing</b></summary>
+
+<br>
+
+**Causes:**
+
+1. Version 0.1.0 installed the command to `/usr/local/sbin`, which is not in
+   a normal user's `PATH` on Debian, openSUSE and some other distributions.
+2. `./scripts/install.sh --theme ...` in 0.1.0 passed `--theme` on to
+   `setup.sh`, which stopped before installing anything for this OS.
+3. `setup.sh` stopped with an error (for example
+   `could not find the EFI loader`), so it never reached the step that
+   installs the command.
+
+**Fix:** pull the latest version and run the installer again. It now installs
+`aarambh` and `aarambh-debug` to `/usr/local/bin` and removes the old copy:
+
+```sh
+cd aarambh && git pull
+make install
+```
+
+On every other Linux on the same disk, run `setup.sh` again (see *Quick
+start*). If it still fails, run `make debug`.
+
+Run `aarambh` **without** `sudo`; it asks for your password itself. On
+Fedora/RHEL-like systems `sudo aarambh` can still say *command not found*,
+because sudo there only searches `/usr/bin` and `/usr/sbin`. The full path
+always works: `sudo /usr/local/bin/aarambh`.
+
+</details>
+
+<details>
+<summary><b>Black screen after installing</b></summary>
+
+<br>
+
+**First, get back into Linux:**
+
+1. Wait about a minute. If the disk is encrypted, the black screen may be
+   the password prompt: type the password and press **Enter**, or press
+   **Esc** to show the text prompt.
+2. Otherwise hold the power button to switch off, power on and open the
+   firmware boot menu (**F12**, **F8**, **F11** or **Esc**). Choose your
+   distribution's own entry (`ubuntu`, `fedora`, ...). That boots the way it
+   did before Aarambh.
+
+**Then run `aarambh-debug`** (or `make debug`) and attach the report. It
+reads the log of the boot that went black. The usual causes, all of which it
+checks:
+
+| Summary line                                      | Fix |
+|---------------------------------------------------|-----|
+| NVIDIA driver without `nvidia-drm.modeset=1`      | `echo 'options nvidia-drm modeset=1' \| sudo tee /etc/modprobe.d/nvidia-drm-modeset.conf`, then rebuild the initramfs (below) |
+| Direct-boot kernel has no modules in `/lib/modules` | `sudo /usr/local/sbin/aarambh-kernels` copies the current kernel again |
+| `root=` points to a filesystem that does not exist | Write the full, correct command line to `/etc/aarambh/cmdline`, then `sudo /usr/local/sbin/aarambh-kernels` |
+| No Aarambh Plymouth theme inside the initramfs    | Rebuild it: `sudo update-initramfs -u` (Debian, Ubuntu), `sudo dracut -f` (Fedora, openSUSE) or `sudo mkinitcpio -P` (Arch). The direct-boot copy is refreshed automatically |
+| `MODULES=dep` and the root disk is not found      | Set `MODULES=most` in `/etc/initramfs-tools/initramfs.conf`, then `sudo update-initramfs -u` |
+| Secure Boot is ON                                 | Turn it off in the firmware setup |
+
+To go back to the old boot completely, see **Uninstall** under *Safety and
+recovery*.
+
+</details>
 
 <details>
 <summary><b><code>'gEfiLoadFile2ProtocolGuid' redeclared as different kind of symbol</code></b></summary>

@@ -3,7 +3,8 @@
 # Build Aarambh, copy it to the EFI system partition, register a firmware boot
 # entry and connect the running OS through hooks/setup.sh.
 #
-# Usage: scripts/install.sh [--dry-run] [--reset-config] [setup.sh options]
+# Usage: scripts/install.sh [--dry-run] [--reset-config] [--theme <name>]
+#                           [--default <os>] [--list-themes] [setup.sh options]
 
 set -euo pipefail
 
@@ -12,6 +13,8 @@ BOOT_LABEL="Aarambh"
 EFI_LOADER='\EFI\aarambh\aarambh.efi'
 RESET_CONFIG=0
 SETUP_ARGS=()
+SETTINGS_ARGS=()
+THEMES="$(sed -n 's/^THEMES="\(.*\)"$/\1/p' "$REPO/hooks/bin/aarambh")"
 
 LEGACY_FILES=(
     light.ttf regular.ttf bold.ttf aarambh-hook.sh
@@ -24,6 +27,24 @@ LEGACY_FILES=(
 # shellcheck source=../hooks/lib/detect.sh
 . "$REPO/hooks/lib/detect.sh"
 
+list_themes() {
+    printf '%s\n' $THEMES
+}
+
+check_theme() {
+    if [[ " $THEMES " != *" $1 "* ]]; then
+        echo "aarambh: error: unknown theme '$1'. Available themes:" >&2
+        list_themes >&2
+        exit 1
+    fi
+}
+
+needs_value() {
+    if [ -z "${2:-}" ]; then
+        die "$1 needs a value"
+    fi
+}
+
 parse_arguments() {
     while [ "$#" -gt 0 ]; do
         case "$1" in
@@ -32,10 +53,49 @@ parse_arguments() {
                 SETUP_ARGS+=("$1")
                 ;;
             --reset-config) RESET_CONFIG=1 ;;
+            --theme)
+                needs_value "$1" "${2:-}"
+                check_theme "$2"
+                SETTINGS_ARGS+=(--theme "$2")
+                shift
+                ;;
+            --default)
+                needs_value "$1" "${2:-}"
+                SETTINGS_ARGS+=(--default "$2")
+                shift
+                ;;
+            --list-themes)
+                list_themes
+                exit 0
+                ;;
             *) SETUP_ARGS+=("$1") ;;
         esac
         shift
     done
+}
+
+report_failure() {
+    local status=$?
+
+    if [ "$status" != 0 ]; then
+        warn "installation did not finish (exit code $status)"
+        warn "run 'make debug' and attach the report to https://github.com/NarkAgni/aarambh/issues"
+    fi
+}
+
+check_architecture() {
+    local machine
+    local firmware_bits
+
+    machine=$(uname -m)
+    if [ "$machine" != x86_64 ]; then
+        die "Aarambh supports 64-bit x86 PCs (x86_64) only, this machine is $machine"
+    fi
+
+    firmware_bits=$(cat /sys/firmware/efi/fw_platform_size 2>/dev/null || echo 64)
+    if [ "$firmware_bits" != 64 ]; then
+        die "this PC has ${firmware_bits}-bit UEFI firmware; Aarambh needs 64-bit UEFI"
+    fi
 }
 
 sudo_run() {
@@ -130,7 +190,9 @@ register_boot_entry() {
 }
 
 parse_arguments "$@"
+trap report_failure EXIT
 check_uefi
+check_architecture
 find_esp
 build
 
@@ -144,10 +206,17 @@ register_boot_entry
 
 if [ "$DRY_RUN" = 1 ]; then
     sudo bash "$REPO/hooks/setup.sh" "${SETUP_ARGS[@]}" || true
+    if [ "${#SETTINGS_ARGS[@]}" -gt 0 ]; then
+        echo "  would run: aarambh ${SETTINGS_ARGS[*]}"
+    fi
     exit 0
 fi
 
 sudo bash "$TARGET/hooks/setup.sh" "${SETUP_ARGS[@]}"
+
+if [ "${#SETTINGS_ARGS[@]}" -gt 0 ]; then
+    sudo bash "$TARGET/hooks/bin/aarambh" "${SETTINGS_ARGS[@]}"
+fi
 
 log "installed to $TARGET"
 sudo efibootmgr | grep -E "BootOrder| $BOOT_LABEL" || true

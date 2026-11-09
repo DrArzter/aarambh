@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-09
+
+### Added
+
+- `aarambh-debug` (`make debug` from the source folder): writes one report
+  with the platform, Secure Boot, firmware entries, ESP contents, kernel
+  lists, GRUB, initramfs, Plymouth, graphics and the logs of this and the
+  previous boot, with a summary of the problems it found.
+- Supported hardware (x86_64 with 64-bit UEFI) stated at the top of the README;
+  `make` and `scripts/install.sh` stop on any other machine.
+- README troubleshooting for `aarambh: command not found` and a black screen
+  after installing.
+
+### Fixed
+
+- `aarambh` is installed to `/usr/local/bin` as documented, instead of
+  `/usr/local/sbin`, which is not in a normal user's `PATH` on Debian, openSUSE
+  and others ("command not found").
+- `scripts/install.sh --theme`, `--default` and `--list-themes`, and
+  `make install THEME=... DEFAULT=...` and `make themes`, now work as
+  documented. Before, `--theme` was passed on to `setup.sh`, which stopped
+  before connecting the OS.
+- `make themes`, `make test` and `make debug` no longer need gnu-efi.
+- The gnu-efi error in `make` no longer suggests `apt` on every distribution.
+
 ## [0.1.0] - 2026-11-08
 
 First public release.
@@ -38,5 +63,6 @@ First public release.
 - QEMU test runner (`make qemu THEME=... DEFAULT=...`) and automated hook tests
   (`make test`).
 
-[Unreleased]: https://github.com/NarkAgni/aarambh/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/NarkAgni/aarambh/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/NarkAgni/aarambh/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/NarkAgni/aarambh/releases/tag/v0.1.0

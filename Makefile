@@ -5,18 +5,33 @@ TARGET    := $(BUILD_DIR)/aarambh.efi
 STB_DIR   := third_party/stb
 STB_URL   := https://raw.githubusercontent.com/nothings/stb/master
 
+NO_BUILD_GOALS := themes debug test uninstall clean
+
 find_gnu_efi = $(shell find /usr/lib /usr/lib64 /usr/local/lib -name '$(1)' 2>/dev/null | head -n1)
 
 CRT0    := $(call find_gnu_efi,crt0-efi-$(ARCH).o)
 LDS     := $(call find_gnu_efi,elf_$(ARCH)_efi.lds)
 LIBDIR  := $(dir $(call find_gnu_efi,libgnuefi.a))
 
+ifneq ($(MAKECMDGOALS),$(filter $(NO_BUILD_GOALS),$(MAKECMDGOALS)))
+BUILD_GOALS := yes
+endif
+ifeq ($(MAKECMDGOALS),)
+BUILD_GOALS := yes
+endif
+
+ifeq ($(BUILD_GOALS),yes)
+ifneq ($(shell uname -m),$(ARCH))
+$(error Aarambh supports 64-bit x86 PCs (x86_64) only, this machine is $(shell uname -m))
+endif
+
 ifeq ($(CRT0),)
-$(error crt0-efi-$(ARCH).o not found. Install gnu-efi: sudo apt install gnu-efi)
+$(error crt0-efi-$(ARCH).o not found. Install gnu-efi with the command for your distribution in the README (Quick start))
 endif
 
 ifeq ($(LDS),)
-$(error elf_$(ARCH)_efi.lds not found. Install gnu-efi: sudo apt install gnu-efi)
+$(error elf_$(ARCH)_efi.lds not found. Install gnu-efi with the command for your distribution in the README (Quick start))
+endif
 endif
 
 INCLUDES := -I$(EFI_INC) \
@@ -47,7 +62,7 @@ SOURCES := $(shell find src -name '*.c') $(STB_DIR)/stb_impl.c
 OBJECTS := $(SOURCES:%.c=$(BUILD_DIR)/obj/%.o)
 DEPENDS := $(OBJECTS:.o=.d)
 
-.PHONY: all clean assets install uninstall test qemu
+.PHONY: all clean assets install uninstall test qemu themes debug
 
 all: $(TARGET)
 
@@ -71,7 +86,13 @@ assets:
 	./scripts/make-assets.sh
 
 install: $(TARGET)
-	./scripts/install.sh
+	./scripts/install.sh $(if $(THEME),--theme $(THEME)) $(if $(DEFAULT),--default $(DEFAULT))
+
+themes:
+	@./scripts/install.sh --list-themes
+
+debug:
+	@bash hooks/bin/aarambh-debug
 
 uninstall:
 	sudo bash hooks/uninstall.sh
