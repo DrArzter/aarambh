@@ -21,7 +21,7 @@ TEST_DIR="$ROOT/tests/qemu"
 WORK_DIR="$ROOT/build/qemu"
 IMAGE="$WORK_DIR/esp.img"
 VARS="$WORK_DIR/vars.fd"
-OVMF_DIR="${OVMF_DIR:-/usr/share/OVMF}"
+OVMF_DIRS="${OVMF_DIR:-} /usr/share/OVMF /usr/share/edk2/x64 /usr/share/edk2/ovmf /usr/share/edk2-ovmf/x64"
 ESP_DIR="::/EFI/aarambh"
 CONFIG="$WORK_DIR/aarambh.conf"
 THEMES="accordion minimal glass-sidebar editorial editorial-dark cinema honeycomb constellation picker-wheel dial hud departures gallery"
@@ -68,6 +68,36 @@ require() {
         echo "Missing '$1'. Install it with: sudo apt install $2" >&2
         exit 1
     fi
+}
+
+# find_firmware <name...>: the first one present, under any known name and
+# directory; distributions disagree about both.
+find_firmware() {
+    local dir
+    local name
+
+    for dir in $OVMF_DIRS; do
+        for name in "$@"; do
+            if [ -f "$dir/$name" ]; then
+                echo "$dir/$name"
+                return 0
+            fi
+        done
+    done
+
+    return 1
+}
+
+need_firmware() {
+    local file
+
+    if ! file=$(find_firmware "$@"); then
+        echo "Missing OVMF firmware ($1). Install edk2-ovmf (Arch), ovmf (Debian)" >&2
+        echo "or edk2-ovmf (Fedora), or point OVMF_DIR at the directory." >&2
+        exit 1
+    fi
+
+    echo "$file"
 }
 
 build() {
@@ -182,18 +212,20 @@ copy_files() {
 }
 
 run_qemu() {
-    local code="$OVMF_DIR/OVMF_CODE_4M.fd"
+    local code
     local machine=q35
     local secure=()
 
-    cp "$OVMF_DIR/OVMF_VARS_4M.fd" "$VARS"
+    code=$(need_firmware OVMF_CODE_4M.fd OVMF_CODE.4m.fd OVMF_CODE.fd)
+    cp "$(need_firmware OVMF_VARS_4M.fd OVMF_VARS.4m.fd OVMF_VARS.fd)" "$VARS"
 
     if [ "$SECURE_BOOT" = 1 ]; then
-        code="$OVMF_DIR/OVMF_CODE_4M.secboot.fd"
+        code=$(need_firmware OVMF_CODE_4M.secboot.fd OVMF_CODE.secboot.4m.fd \
+                             OVMF_CODE.secboot.fd)
         machine=q35,smm=on
         # shellcheck disable=SC2054
         secure=(-global driver=cfi.pflash01,property=secure,value=on)
-        virt-fw-vars -i "$OVMF_DIR/OVMF_VARS_4M.ms.fd" -o "$VARS" \
+        virt-fw-vars -i "$(need_firmware OVMF_VARS_4M.ms.fd OVMF_VARS.ms.4m.fd)" -o "$VARS" \
             --add-mok "$SHIM_LOCK_GUID" "$KEY_DIR/test.crt" >/dev/null
     fi
 
