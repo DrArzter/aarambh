@@ -6,13 +6,15 @@
 # Fedora, which are listed in fixtures/aarambh.conf 
 # which Aarambh finds on its own through autodetect.
 #
-# Usage: tests/qemu/run.sh [--no-kvm] [--secure-boot] [--theme <name>] [--default <os>]
+# Usage: tests/qemu/run.sh [--no-kvm] [--secure-boot] [--second-esp] [--theme <name>] [--default <os>]
 #
 #   --theme        Theme to show, e.g. cinema (default: the one in the fixture)
 #   --default      Entry selected at start: ubuntu, fedora a title or an index
 #   --secure-boot  Boot like a real PC with Secure Boot on: Microsoft keys,
 #                  the distribution's shim, Aarambh signed with a throwaway
 #                  key that is already enrolled in MOK
+#   --second-esp   Add a second ESP holding only Windows, the layout you get
+#                  when Windows was installed first and Linux brought its own
 
 set -euo pipefail
 
@@ -20,6 +22,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEST_DIR="$ROOT/tests/qemu"
 WORK_DIR="$ROOT/build/qemu"
 IMAGE="$WORK_DIR/esp.img"
+WINDOWS_IMAGE="$WORK_DIR/esp-windows.img"
 VARS="$WORK_DIR/vars.fd"
 OVMF_DIRS="${OVMF_DIR:-} /usr/share/OVMF /usr/share/edk2/x64 /usr/share/edk2/ovmf /usr/share/edk2-ovmf/x64"
 ESP_DIR="::/EFI/aarambh"
@@ -32,11 +35,12 @@ ACCEL=(-enable-kvm -cpu host)
 THEME=""
 DEFAULT=""
 SECURE_BOOT=0
+SECOND_ESP=0
 KEY_DIR="$WORK_DIR/keys"
 SHIM_LOCK_GUID=605dab50-e046-4300-abb6-3dd810dd8b23
 
 usage() {
-    sed -n '3,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '3,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -44,6 +48,7 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --no-kvm) ACCEL=() ;;
         --secure-boot) SECURE_BOOT=1 ;;
+        --second-esp) SECOND_ESP=1 ;;
         --theme)
             THEME="${2:-}"
             shift
@@ -116,6 +121,13 @@ create_image() {
     mkfs.vfat -F 32 "$IMAGE" >/dev/null
 
     mmd -i "$IMAGE" ::/EFI ::/EFI/BOOT ::/EFI/ubuntu ::/EFI/fedora "$ESP_DIR"
+
+    if [ "$SECOND_ESP" = 1 ]; then
+        rm -f "$WINDOWS_IMAGE"
+        dd if=/dev/zero of="$WINDOWS_IMAGE" bs=1M count=260 status=none
+        mkfs.vfat -F 32 "$WINDOWS_IMAGE" >/dev/null
+        mmd -i "$WINDOWS_IMAGE" ::/EFI ::/EFI/Microsoft ::/EFI/Microsoft/Boot
+    fi
 }
 
 write_config() {
@@ -203,6 +215,10 @@ copy_files() {
     # mcopy -i "$IMAGE" "$efi" ::/EFI/debian/grubx64.efi
     # mcopy -i "$IMAGE" "$efi" ::/EFI/Microsoft/Boot/bootmgfw.efi
 
+    if [ "$SECOND_ESP" = 1 ]; then
+        mcopy -i "$WINDOWS_IMAGE" "$efi" ::/EFI/Microsoft/Boot/bootmgfw.efi
+    fi
+
     mcopy -i "$IMAGE" "$CONFIG" "$ESP_DIR/"
     mcopy -i "$IMAGE" "$TEST_DIR/fixtures/ubuntu.kernels" "$ESP_DIR/"
 
@@ -215,6 +231,7 @@ run_qemu() {
     local code
     local machine=q35
     local secure=()
+    local windows=()
 
     code=$(need_firmware OVMF_CODE_4M.fd OVMF_CODE.4m.fd OVMF_CODE.fd)
     cp "$(need_firmware OVMF_VARS_4M.fd OVMF_VARS.4m.fd OVMF_VARS.fd)" "$VARS"
@@ -229,6 +246,10 @@ run_qemu() {
             --add-mok "$SHIM_LOCK_GUID" "$KEY_DIR/test.crt" >/dev/null
     fi
 
+    if [ "$SECOND_ESP" = 1 ]; then
+        windows=(-drive format=raw,file="$WINDOWS_IMAGE")
+    fi
+
     qemu-system-x86_64 "${ACCEL[@]}" \
         -machine "$machine" \
         "${secure[@]}" \
@@ -236,6 +257,7 @@ run_qemu() {
         -drive if=pflash,format=raw,readonly=on,file="$code" \
         -drive if=pflash,format=raw,file="$VARS" \
         -drive format=raw,file="$IMAGE" \
+        "${windows[@]}" \
         -net none \
         ${QEMU_DISPLAY:--display gtk}
 }
