@@ -5,7 +5,7 @@ kernel lists, keyboard navigation, the countdown, the clock, animation state
 and booting. Every frame it hands the theme a `ThemeFrame` snapshot and the
 theme paints the screen from it.
 
-The ten bundled themes in `src/themes/` (one file each) are the best
+The bundled themes in `src/themes/` (one file each) are the best
 examples. `minimal/minimal.c` is the smallest.
 
 ## 1. Create the theme
@@ -181,10 +181,12 @@ Every widget takes its colors, so themes are not tied to white text.
 ## Drawing (`aarambh/gfx/`)
 
 `draw_image`, `draw_image_tinted`, `draw_image_slice`, `draw_backdrop`
-(frosted glass from a blurred copy), `draw_rect`, `draw_round_rect`,
+(frosted glass from a blurred copy), `draw_image_perspective` and
+`draw_image_reflection` (a card turned away from the viewer and its mirror
+image, see Gallery), `draw_rect`, `draw_round_rect`,
 `draw_ring`, `draw_arc`, `draw_line`, `draw_polygon`, `draw_triangle`,
 `draw_text`, `draw_text_shadow`, `draw_text_vertical`, `text_width`,
 `image_blur`, `image_noise`, `image_blend`, `image_darken`, `image_gradient`,
-`image_glow_sprite`.
+`image_glow_sprite`, `image_round_corners`.
 
 Opacity values run from `0` to `256` (`ALPHA_OPAQUE`). Colors are `0xRRGGBB`.

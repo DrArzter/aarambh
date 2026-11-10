@@ -21,7 +21,7 @@ VARS="$WORK_DIR/vars.fd"
 OVMF_DIR="${OVMF_DIR:-/usr/share/OVMF}"
 ESP_DIR="::/EFI/aarambh"
 CONFIG="$WORK_DIR/aarambh.conf"
-THEMES="accordion minimal glass-sidebar editorial editorial-dark cinema honeycomb constellation picker-wheel dial hud"
+THEMES="accordion minimal glass-sidebar editorial editorial-dark cinema honeycomb constellation picker-wheel dial hud departures gallery"
 
 export MTOOLS_SKIP_CHECK=1
 

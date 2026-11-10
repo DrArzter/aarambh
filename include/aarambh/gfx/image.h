@@ -26,6 +26,9 @@ void image_clear(Image *image);
 /* Box blur, three passes, close to a Gaussian with the given radius. */
 void image_blur(Image *image, int radius);
 
+/* Makes the corners transparent, so the image draws as a rounded rectangle. */
+void image_round_corners(Image *image, float radius);
+
 /* Film grain: brightens or darkens pixels by up to `strength` (0..255). */
 void image_noise(Image *image, int strength, UINT32 seed);
 

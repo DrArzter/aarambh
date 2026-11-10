@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-10
+
+### Added
+
+- Departures theme: an airport split-flap board. Every OS is a flight with its
+  kernel, status and gate, and the letters flip when the selection changes.
+- Gallery theme: a cover flow of wallpaper cards that turn away to the sides
+  and reflect on a dark floor.
+- `draw_image_perspective`, `draw_image_reflection` and `image_round_corners`
+  for theme authors.
+
 ## [0.1.1] - 2026-11-09
 
 ### Added
@@ -63,6 +74,7 @@ First public release.
 - QEMU test runner (`make qemu THEME=... DEFAULT=...`) and automated hook tests
   (`make test`).
 
-[Unreleased]: https://github.com/NarkAgni/aarambh/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/NarkAgni/aarambh/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/NarkAgni/aarambh/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/NarkAgni/aarambh/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/NarkAgni/aarambh/releases/tag/v0.1.0

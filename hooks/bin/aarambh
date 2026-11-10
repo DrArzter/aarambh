@@ -18,7 +18,7 @@
 set -uo pipefail
 
 LIB_DIR="${AARAMBH_LIB_DIR:-/usr/local/lib/aarambh}"
-THEMES="accordion minimal glass-sidebar editorial editorial-dark cinema honeycomb constellation picker-wheel dial hud"
+THEMES="accordion minimal glass-sidebar editorial editorial-dark cinema honeycomb constellation picker-wheel dial hud departures gallery"
 ACTIONS=()
 
 usage() {

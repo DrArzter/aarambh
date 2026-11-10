@@ -13,6 +13,8 @@ extern const Theme constellation_theme;
 extern const Theme picker_wheel_theme;
 extern const Theme dial_theme;
 extern const Theme hud_theme;
+extern const Theme departures_theme;
+extern const Theme gallery_theme;
 
 static const Theme *const themes[] = {
     &accordion_theme,
@@ -25,7 +27,9 @@ static const Theme *const themes[] = {
     &constellation_theme,
     &picker_wheel_theme,
     &dial_theme,
-    &hud_theme
+    &hud_theme,
+    &departures_theme,
+    &gallery_theme
 };
 
 const Theme *theme_registry_find(const char *name)

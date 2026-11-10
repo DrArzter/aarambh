@@ -1,4 +1,5 @@
 #include "gfx/pixel.h"
+#include "lib/math.h"
 #include "lib/memory.h"
 
 #define VIGNETTE_TOP_END        0.16f
@@ -198,4 +199,53 @@ int image_glow_sprite(Image *image, int size, UINT32 color)
     }
 
     return 1;
+}
+
+static float corner_distance(int position, int size, float radius)
+{
+    float center = position + 0.5f;
+
+    if (center < radius) {
+        return radius - center;
+    }
+    if (center > size - radius) {
+        return center - (size - radius);
+    }
+    return 0.0f;
+}
+
+void image_round_corners(Image *image, float radius)
+{
+    int x;
+    int y;
+
+    for (y = 0; y < image->height; y++) {
+        float dy = corner_distance(y, image->height, radius);
+        UINT32 *row = image->pixels + y * image->width;
+
+        if (dy <= 0.0f) {
+            continue;
+        }
+
+        for (x = 0; x < image->width; x++) {
+            float dx = corner_distance(x, image->width, radius);
+            float coverage;
+            UINT32 alpha;
+
+            if (dx <= 0.0f) {
+                continue;
+            }
+
+            coverage = radius + 0.5f - (float)math_sqrt(dx * dx + dy * dy);
+            if (coverage >= 1.0f) {
+                continue;
+            }
+            if (coverage < 0.0f) {
+                coverage = 0.0f;
+            }
+
+            alpha = (UINT32)((row[x] >> 24) * coverage);
+            row[x] = (row[x] & 0xffffff) | (alpha << 24);
+        }
+    }
 }

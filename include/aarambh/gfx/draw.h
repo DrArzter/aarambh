@@ -57,4 +57,20 @@ void draw_image_tinted(Image *destination, const Image *source,
 void draw_backdrop(Image *destination, const Image *source, float x, float y,
                    float width, float height, float radius, int alpha);
 
+/*
+ * An image squeezed between two vertical edges of different heights, centered
+ * on center_y, like a card turned away from the viewer. Respects the source's
+ * alpha, so rounded corners stay round.
+ */
+void draw_image_perspective(Image *destination, const Image *source, float x, float center_y,
+                            float width, float left_height, float right_height, int alpha);
+
+/*
+ * The mirror image of draw_image_perspective below it: `gap` pixels under the
+ * bottom edge, `length` times the card height long, fading out downwards.
+ */
+void draw_image_reflection(Image *destination, const Image *source, float x, float center_y,
+                           float width, float left_height, float right_height, float gap,
+                           float length, int alpha);
+
 #endif

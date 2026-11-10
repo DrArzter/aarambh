@@ -35,7 +35,7 @@ install it.
 
 ## Themes
 
-11 built-in themes. Switch with `aarambh --theme <name>`; each has a matching
+13 built-in themes. Switch with `aarambh --theme <name>`; each has a matching
 boot, restart and shutdown splash.
 
 <table>
@@ -89,6 +89,16 @@ boot, restart and shutdown splash.
 <td align="center" width="33%">
 <img src="docs/screenshots/minimal.jpg" alt="Minimal theme"><br>
 <b>Minimal</b>
+</td>
+<td align="center" width="33%">
+<img src="docs/screenshots/departures.jpg" alt="Departures theme"><br>
+<b>Departures</b>
+</td>
+</tr>
+<tr>
+<td align="center" width="33%">
+<img src="docs/screenshots/gallery.jpg" alt="Gallery theme"><br>
+<b>Gallery</b>
 </td>
 </tr>
 </table>
@@ -200,7 +210,7 @@ any boot loader or kernel.
 - Firmware setup, Restart and Power Off entries
 - Matching Plymouth splash for a boot with no black screen
 - Every change is recorded and can be undone with `hooks/uninstall.sh`
-- 11 built-in themes, each with its own colors, switchable with one config line
+- 13 built-in themes, each with its own colors, switchable with one config line
 - Theme API: new looks are drawn on top of a shared core, widgets and theme kit
 
 </details>
@@ -902,9 +912,11 @@ list and has its own launch splash and matching Plymouth splash.
 | <img src="docs/screenshots/picker-wheel.jpg" width="280" alt="Picker Wheel"> | `picker-wheel` | **Picker Wheel**: Spinning wheel picker in graphite and mint | Up / Down |
 | <img src="docs/screenshots/dial.jpg" width="280" alt="Dial"> | `dial` | **Dial**: Watch dial and needle, copper on racing green | Left / Right |
 | <img src="docs/screenshots/hud.jpg" width="280" alt="HUD"> | `hud` | **HUD**: Sci-fi target lock, lime on black | Up / Down |
+| <img src="docs/screenshots/departures.jpg" width="280" alt="Departures"> | `departures` | **Departures**: Airport split-flap board, white flaps and sky blue on charcoal; letters flip when the selection changes | Up / Down |
+| <img src="docs/screenshots/gallery.jpg" width="280" alt="Gallery"> | `gallery` | **Gallery**: Cover flow of wallpaper cards that turn and reflect on a dark floor | Left / Right |
 
 In themes switched with Up / Down, Right opens the kernel list. In the others,
-Down opens it (Accordion and Minimal: Down, then Enter).
+Down opens it (Accordion, Minimal and Gallery: Down, then Enter).
 
 Plymouth always continues the current theme's launch splash, with no
 initramfs rebuild when you switch (see **Plymouth and themes**). A boot that
