@@ -337,8 +337,21 @@ scenario_ubuntu() {
     kernel_files vmlinuz-6.8.0-45-generic initrd.img-6.8.0-45-generic \
                  vmlinuz-6.8.0-40-generic initrd.img-6.8.0-40-generic
 
+    # Restart and shutdown frames Aarambh drew for the chosen theme.
+    mkdir -p "$ESP/EFI/aarambh/shutdown"
+    for part in bg reboot shutdown dot; do
+        echo "cinema $part" > "$ESP/EFI/aarambh/shutdown/ubuntu-$part.png"
+    done
+
     check_setup ubuntu
     expect_plymouth_theme
+
+    if cmp -s "$ESP/EFI/aarambh/shutdown/ubuntu-reboot.png" \
+        "$ROOT_DIR/usr/share/plymouth/themes/aarambh/still-reboot.png"; then
+        pass "the theme's restart frames survive reinstalling the Plymouth theme"
+    else
+        fail "the theme's restart frames were lost when the Plymouth theme was reinstalled"
+    fi
     expect_initrd ubuntu "initrd.img-6.8.0-45-generic"
     check_uninstall ubuntu
 }

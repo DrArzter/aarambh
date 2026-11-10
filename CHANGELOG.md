@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-10
+
+### Added
+
+- Write-combining framebuffer: the menu maps the screen write-combining
+  through the PAT while it runs and restores the firmware's memory types
+  before starting any system. Animation is smooth on panels where a full
+  frame took about 120 ms to show (2560x1600). On by default;
+  `write_combining no` turns it off. Contributed by Dipak Yadav (#1).
+- `\EFI\aarambh\wc.state` records the first attempt, so a boot that hung with
+  write-combining turns it off on the next boot by itself.
+- `scripts/install.sh` turns write-combining off inside virtual machines other
+  than QEMU/KVM and on Apple or coreboot firmware. `aarambh-debug` shows
+  `wc.state`.
+- `docs/SECURE_BOOT.md`: installing with Secure Boot on, every MokManager
+  screen with a screenshot, and every question about the password.
+- README: all packages for building, Secure Boot, `make test` and
+  `make qemu SECURE_BOOT=1` in the Requirements table.
+
+### Fixed
+
+- Countdown and animations ran far too slow on firmware whose `Stall()` waits
+  longer than asked (30 times on an LG gram 16Z90Q). The timer is now
+  calibrated from CPUID leaf 0x15 or a UEFI timer event, and frame pacing no
+  longer uses `Stall()`. Contributed by Dipak Yadav (#1).
+- The one-time kernel choice never reached systemd-boot: the
+  `LoaderEntryOneShot` variable was written with a mistyped vendor GUID.
+  Contributed by Dipak Yadav (#1).
+- The first restart after `make install` showed the plain restart splash
+  instead of the chosen theme's: reinstalling the Plymouth theme dropped the
+  restart and shutdown frames Aarambh drew for it. They are now copied back
+  right away.
+
 ## [0.1.3] - 2026-11-10
 
 ### Added
@@ -15,10 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shim, which every PC trusts, and is signed with a Machine Owner Key (MOK).
   Everything is set up by `scripts/install.sh` and `hooks/setup.sh`:
   - An already enrolled key is reused (Ubuntu's shim-signed MOK, Fedora's
-    akmods key, the DKMS key), so most PCs with NVIDIA or other DKMS drivers
-    need no extra step. Otherwise a key is created in `/var/lib/aarambh/keys/`
-    and enrolled once in MokManager with a random 8-digit password
-    (`sudo aarambh-sign --password` shows it again).
+    akmods key, the DKMS key) unless it is marked for kernel modules only,
+    which shim refuses for boot loaders. Otherwise a key is created in
+    `/var/lib/aarambh/keys/` and enrolled once in MokManager with a random
+    8-digit password (`sudo aarambh-sign --password` shows it again).
   - Aarambh asks shim to check every kernel and loader it starts, so kernels
     signed by the distribution or by the MOK key boot directly, and anything
     else is still refused.
@@ -110,7 +143,8 @@ First public release.
 - QEMU test runner (`make qemu THEME=... DEFAULT=...`) and automated hook tests
   (`make test`).
 
-[Unreleased]: https://github.com/NarkAgni/aarambh/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/NarkAgni/aarambh/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/NarkAgni/aarambh/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/NarkAgni/aarambh/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/NarkAgni/aarambh/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/NarkAgni/aarambh/compare/v0.1.0...v0.1.1

@@ -77,6 +77,24 @@ check_mkinitcpio_hook() {
     fi
 }
 
+# The restart and shutdown frames Aarambh drew for the current theme live on
+# the ESP; aarambh-clear copies them in at every boot. Reinstalling the theme
+# wipes the folder, so put them back now, or the very next restart shows the
+# plain splash instead of the chosen theme's.
+restore_shutdown_frames() {
+    local part
+
+    for part in bg reboot shutdown dot; do
+        if [ ! -f "$ESP_DIR/shutdown/$KEY-$part.png" ]; then
+            return 0
+        fi
+    done
+
+    for part in bg reboot shutdown dot; do
+        run cp "$ESP_DIR/shutdown/$KEY-$part.png" "$PLYMOUTH_THEME_DIR/still-$part.png"
+    done
+}
+
 install_plymouth_theme() {
     local source
 
@@ -104,6 +122,7 @@ install_plymouth_theme() {
     run rm -rf "$PLYMOUTH_THEME_DIR"
     run mkdir -p "$PLYMOUTH_THEME_DIR"
     run cp -r "$source/." "$PLYMOUTH_THEME_DIR/"
+    restore_shutdown_frames
     manifest_add directory "$PLYMOUTH_THEME_DIR"
 
     write_plymouthd_conf

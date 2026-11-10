@@ -123,6 +123,11 @@ cd aarambh
 make install                       # default theme (accordion)
 ```
 
+**Secure Boot on?** Nothing changes in these steps. If the installer ends with
+an 8-digit password, one blue screen appears at the next restart to confirm
+the signing key: follow **[docs/SECURE_BOOT.md](docs/SECURE_BOOT.md)**, which
+shows every screen.
+
 To install with a theme and a default OS in one go:
 
 ```sh
@@ -172,8 +177,8 @@ never need this step.
 > through your distribution's shim. If your PC does not trust the signing key
 > yet, the installer prints an 8-digit password and a blue **Perform MOK
 > management** screen appears once at the next restart: choose **Enroll MOK →
-> Continue → Yes**, type the password, then **Reboot**. See **Secure Boot**
-> under *Safety and recovery*.
+> Continue → Yes**, type the password, then **Reboot**. The step-by-step guide
+> with screenshots: **[docs/SECURE_BOOT.md](docs/SECURE_BOOT.md)**.
 
 **Something went wrong?** Start the system once it boots again (see *Safety
 and recovery*), then run `aarambh-debug`, or `make debug` from the source
@@ -617,7 +622,10 @@ At boot time Aarambh:
 
 - reads files inside `\EFI\aarambh\`, kernel files named in `<id>.kernels`,
   and the folder names under `\EFI\` (for autodetect)
-- writes only `next-<id>.cfg` on the ESP
+- writes only `next-<id>.cfg`, the restart and shutdown splash images under
+  `shutdown\` and `wc.state` on the ESP
+- maps the framebuffer write-combining while the menu runs, and puts the
+  firmware's memory types back before it starts any system
 - writes firmware variables only when you act: `OsIndications` when you choose
   **Firmware**, `LoaderEntryOneShot` when it hands over to systemd-boot
 - has no network code and sends nothing anywhere
@@ -636,7 +644,9 @@ already on the ESP or copies made by the hook while Linux was running.
 
 <br>
 
-Aarambh works with Secure Boot on. Nothing has to be set up by hand:
+Aarambh works with Secure Boot on. Nothing has to be set up by hand. For the
+one-time key enrollment, screen by screen with screenshots, and every question
+about the password, see **[docs/SECURE_BOOT.md](docs/SECURE_BOOT.md)**.
 
 ```
 Firmware (trusts Microsoft's keys)
@@ -717,6 +727,36 @@ Your old boot path is never removed:
 
 If a system fails to start from the menu, Aarambh shows **"Could not start
 this system"** and returns to the menu instead of hanging.
+
+</details>
+
+<details>
+<summary><b>Smooth animation (write-combining)</b></summary>
+
+<br>
+
+Before an OS starts, firmware leaves the screen memory uncached, so a full
+frame on a high resolution panel can take over 100 ms to show. Aarambh maps
+the framebuffer write-combining through the CPU's page attribute table, the
+way Linux does once it runs, and restores the firmware's memory types before
+it starts any system.
+
+The first boot after installing records its progress in
+`\EFI\aarambh\wc.state`:
+
+| `wc.state`    | Meaning |
+|---------------|---------|
+| `trying`      | First attempt is running |
+| `ok`          | Frames were shown with write-combining; used on every boot |
+| `failed`      | A boot found `trying` left over (the attempt hung), so it stays off |
+| `unsupported` | The CPU or firmware cannot use it (no PAT, CET, 5-level paging) |
+
+If the menu ever hangs on that first boot, hold the power button: the next boot
+turns write-combining off by itself. Delete `wc.state` to try again.
+
+`scripts/install.sh` adds `write_combining no` inside virtual machines other
+than QEMU/KVM and on Apple or coreboot firmware, where it is untested. Add
+`write_combining no` or `yes` to `aarambh.conf` yourself to override it.
 
 </details>
 
@@ -819,6 +859,7 @@ entry Firmware  | @firmware               | logos/settings.png | backgrounds/set
 | `default`      | Default entry: OS id (`ubuntu`, `fedora`, `windows`), menu title, or index starting at 0 |
 | `autodetect`   | `yes` adds loaders found under `\EFI\` (Windows, other OSes) |
 | `edit`         | `yes` (default) lets E edit boot options, `no` turns it off |
+| `write_combining` | `yes` (default) maps the screen write-combining for smooth animation, `no` keeps the firmware's slower path (see **Smooth animation** under *Safety and recovery*) |
 | `font_light`, `font_regular`, `font_bold`, `font_mono` | TTF paths     |
 | `utc_offset`   | Written by the hooks, e.g. `+0530`                    |
 | `entry`        | `title \| loader \| logo \| background \| key \| accent` |
@@ -1012,8 +1053,22 @@ smallest working example is `src/themes/minimal/minimal.c`.
 |-------------------|----------------------------------------------|-----------------------------------------|----------------------------------------|
 | Build             | `build-essential gnu-efi curl`               | `gcc make gnu-efi-devel curl`           | `base-devel gnu-efi curl`              |
 | Install           | `efibootmgr`                                 | `efibootmgr`                            | `efibootmgr`                           |
+| Secure Boot (installed by `setup.sh` when needed) | `shim-signed sbsigntool mokutil openssl` | `shim-x64 sbsigntools mokutil openssl` | `sbsigntools openssl` (with `sbctl` keys) |
+| `make test`       | `bash coreutils openssl sbsigntool`          | `bash coreutils openssl sbsigntools`    | `bash coreutils openssl sbsigntools`   |
 | Test in QEMU      | `qemu-system-x86 ovmf mtools dosfstools`     | `qemu-system-x86 edk2-ovmf mtools dosfstools` | `qemu-desktop edk2-ovmf mtools dosfstools` |
+| Test in QEMU with Secure Boot (`make qemu SECURE_BOOT=1`) | the QEMU row plus `shim-signed sbsigntool openssl python3-virt-firmware` | the QEMU row plus `shim-x64 sbsigntools openssl python3-virt-firmware` | the QEMU row plus `sbsigntools openssl`, and `pipx install virt-firmware`; pass `SHIM=` and `MOK_MANAGER=` from another distribution |
 | Regenerate assets | `imagemagick fonts-dejavu-core librsvg2-bin` | `ImageMagick dejavu-sans-fonts librsvg2-tools` | `imagemagick ttf-dejavu librsvg`  |
+
+Everything at once on Debian or Ubuntu:
+
+```sh
+sudo apt install build-essential gnu-efi curl efibootmgr \
+    shim-signed sbsigntool mokutil openssl \
+    qemu-system-x86 ovmf mtools dosfstools python3-virt-firmware
+```
+
+`make test` skips the Secure Boot scenario when `sbsign` or `openssl` is
+missing, and `make qemu SECURE_BOOT=1` names the package it is missing.
 
 Tested with gnu-efi 3.0.15 (Ubuntu 24.04 package) and gnu-efi 4.0.x.
 
@@ -1077,17 +1132,19 @@ aarambh/
 ├── hooks/
 │   ├── setup.sh                Connect a Linux installation
 │   ├── uninstall.sh            Undo setup.sh
-│   ├── bin/                    aarambh-kernels, aarambh-clear
+│   ├── bin/                    aarambh-kernels, aarambh-clear, aarambh-sign
 │   ├── lib/                    Detection, kernel lists, GRUB, Plymouth, initramfs
 │   ├── triggers/               aarambh-refresh (kernel hook)
 │   ├── grub/                   01_aarambh
-│   └── systemd/                aarambh-clear.service, aarambh-shutdown-splash.service
+│   ├── systemd/                aarambh-clear.service, aarambh-shutdown-splash.service
+│   └── apt/, pacman/           Copy shim updates next to Aarambh
 ├── scripts/                    install.sh, make-assets.sh
 ├── tests/
 │   ├── hooks/                  Simulated distributions for setup/uninstall
 │   └── qemu/                   Boot the menu in a virtual machine
 ├── docs/THEMES.md              Writing a theme
-└── docs/screenshots/           One screenshot per theme
+├── docs/SECURE_BOOT.md         Installing with Secure Boot on, screen by screen
+└── docs/screenshots/           One screenshot per theme, secure-boot/ for the guide
 ```
 
 </details>
